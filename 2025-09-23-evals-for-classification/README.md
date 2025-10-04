@@ -6,11 +6,16 @@
 
 [![Evals for Classification](https://img.youtube.com/vi/5Fy0hBzyduU/0.jpg)](https://youtu.be/5Fy0hBzyduU)
 
-Links:
 
 ## Episode Overview
 
 This episode dives deep into the practical challenges of building AI systems ready for production. The hosts explore large-scale classification systems handling 1000+ categories, demonstrating how to evaluate and tune these systems for real-world use.
+
+<img width="888" height="554" alt="Screenshot 2025-10-04 at 11 56 00 AM" src="https://github.com/user-attachments/assets/c3bd1bfa-c83e-4607-a10b-793699406388" />
+
+
+<img width="942" height="581" alt="Screenshot 2025-10-04 at 11 55 50 AM" src="https://github.com/user-attachments/assets/bb097f0f-dce9-4a63-a352-d764671f1d14" />
+
 
 ### Key Topics Covered
 
