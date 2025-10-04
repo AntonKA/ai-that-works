@@ -1,8 +1,62 @@
-# 🦄 Large Scale Classification System
+# 🦄 ai that works: Evals for Classification
+
+> In this episode, hosts Vaibhav Gupta and Dex, along with guest Kevin Gregory, explore building production-ready AI classification systems, focusing on evaluation, tuning, and user experience design.
+
+[Video](https://youtu.be/5Fy0hBzyduU) (1h27m)
+
+[![Evals for Classification](https://img.youtube.com/vi/5Fy0hBzyduU/0.jpg)](https://youtu.be/5Fy0hBzyduU)
+
+Links:
+
+## Episode Overview
+
+This episode dives deep into the practical challenges of building AI systems ready for production. The hosts explore large-scale classification systems handling 1000+ categories, demonstrating how to evaluate and tune these systems for real-world use.
+
+### Key Topics Covered
+
+- Building production-grade classification systems
+- Dynamic UIs for flexible content creation
+- Using LLMs to enhance classification accuracy
+- Evaluation strategies and custom dashboards
+- The subjective nature of classification correctness
+- Tuning classification pipelines for performance
+- Balancing accuracy, cost, and user experience
+
+## Key Takeaways
+
+- AI engineering concepts can be applied to real projects with measurable impact
+- Building production-grade classification systems requires careful attention to UX
+- Evaluating AI systems requires understanding both metrics and user experience
+- Subjectivity plays a significant role in defining correct classifications
+- Real user data is crucial for effective iteration and improvement
+- UI design should prioritize clarity and enable rapid spot-checking
+- Iterative development accelerates the path to working solutions
+- Metrics should tie back to business outcomes for meaningful evaluation
+- Model upgrades and user feedback drive continuous improvement
+- Engineers must balance accuracy and cost in AI solutions
+
+## Episode Highlights
+
+> "The most important thing is to make it work quickly and iterate with real user data."
+
+> "Building a UI is essential - it's not just about the model, it's about how users interact with your classification system."
+
+> "Understanding what 'correct' means for your specific use case is more important than achieving perfect accuracy on arbitrary benchmarks."
+
+## Resources
+
+- [Session Recording](https://youtu.be/5Fy0hBzyduU)
+- [Discord Community](https://boundaryml.com/discord)
+- Sign up for the next session on [Luma](https://lu.ma/baml)
+
+## Whiteboards
+
+---
+
 
 > A production-ready AI classification system that handles 1000+ categories using a various approaches combining embeddings and LLM-based selection.
 
-[Video Tutorial](https://youtu.be/6B7MzraQMZk)
+[Original Video Tutorial](https://youtu.be/6B7MzraQMZk)
 
 [![Large Scale Classification](https://img.youtube.com/vi/6B7MzraQMZk/0.jpg)](https://www.youtube.com/watch?v=6B7MzraQMZk)
 

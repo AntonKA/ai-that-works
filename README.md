@@ -134,13 +134,10 @@ https://www.anthropic.com/engineering/a-postmortem-of-three-recent-issues
         <div style="color: #666; font-size: 13px; margin-bottom: 4px;">2025-09-23</div>
         <div style="font-size: 16px; line-height: 1.3; margin-bottom: 6px;"><strong>#24</strong>: Evals for Classification</div>
         <div style="font-size: 13px; color: #666;">
-          <a href="https://youtu.be/5Fy0hBzyduU">watch</a> • <a href="./2025-09-16-coding-agent-tools-bash-vs-mcp">code</a>
+          <a href="https://youtu.be/5Fy0hBzyduU">watch</a> • <a href="./2025-09-23-evals-for-classification">code</a>
         </div>
       </div>
-    </td><td><div style="padding: 8px 0; line-height: 1.5;">On this week's AI That Works, we'll build custom dashboards for evaluating classification tasks using LLMs.
-
-What do you show to make actionable changes in your code to improve classification accuracy?
-We'll include a primer on how to design a large-scale classifcation system using LLMs.
+    </td><td><div style="padding: 8px 0; line-height: 1.5;">In this episode of AI That Works, hosts Vaibhav Gupta and Dex, along with guest Kevin Gregory, explore the intricacies of building AI systems that are ready for production. They discuss the concept of dynamic UIs, the challenges of large-scale classification, and the importance of user experience in AI applications. The conversation delves into the use of LLMs for enhancing classification systems, the evaluation and tuning of these systems, and the subjective nature of what constitutes a 'correct' classification. The episode emphasizes the need for engineers to focus on accuracy and user experience while navigating the complexities of AI engineering. The speakers also discuss model upgrades, user feedback, and the importance of building effective user interfaces, emphasizing iterative development and rapid prototyping for chatbot performance evaluation.
 </div></td></tr>
 <tr><td>
       <div style="padding: 8px 0;">
@@ -153,13 +150,7 @@ We'll include a primer on how to design a large-scale classifcation system using
           <a href="https://www.youtube.com/watch?v=RtXpXIY4sLk">watch</a> • <a href="./2025-09-16-coding-agent-tools-bash-vs-mcp">code</a>
         </div>
       </div>
-    </td><td><div style="padding: 8px 0; line-height: 1.5;">On this week's AI That Works, we'll explore the great Bash vs. MCP debate - what's better for helping coding agents do more?
-
-We'll talk about:
-
-- Token efficiency and Downsides of JSON
-- Writing your own drop-ins for MCP tools
-- Other advanced tricks like .shims for forcing uv instead of python or bun instead of npm
+    </td><td><div style="padding: 8px 0; line-height: 1.5;">In this conversation, Dex and Vaibhav delve into the intricacies of coding agents, focusing on the debate between using MCP (Model Control Protocol) and Bash for tool integration. They explore the importance of understanding context windows, token management, and the efficiency of using different tools. The discussion emphasizes the significance of naming conventions, dynamic context engineering, and the engineering efforts required to optimize performance. They also share real-world applications, best practices for using MCPs, and engage with the community through a Q&A session.
 </div></td></tr>
 <tr><td>
       <div style="padding: 8px 0;">

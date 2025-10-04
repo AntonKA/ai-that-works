@@ -9,14 +9,14 @@ Update the just-completed episode README with YouTube link, thumbnail, and summa
 
 1. **Check current date** - Use bash to verify today's date, run `bash(ls .)` to see the top level of folder structure here
 
-2. **Gather required information** - Ensure you have:
+2. **Gather required information** - ASK THE USER FOR: 
    - YouTube link to the just-completed recording
    - Summary of the just-completed episode
    - Folder for the just-completed episode (dated today or yesterday, in the past) (use List() or Bash(ls) to check if it exists)
    - Next episode signup link (starting with lu.ma/...)
    - Summary/description of the next episode
 
-   **STOP and ask the user if ANY of these are missing**
+**STOP and ask the user if UNTIL YOU HAVE ALL OF THESE DATA POINTS**
 
 3. **Update past episode meta.md**:
    - Read at least 3 other past episode meta.mds to understand the format

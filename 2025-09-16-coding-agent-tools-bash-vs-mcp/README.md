@@ -1,7 +1,59 @@
 
+# 🦄 ai that works: Bash vs. MCP - Token Efficient Coding Agent Tooling
 
+> In this episode, Dex and Vaibhav delve into the intricacies of coding agents, focusing on the debate between using MCP (Model Control Protocol) and Bash for tool integration, exploring context windows, token management, and optimization strategies.
 
+[Video](https://www.youtube.com/watch?v=RtXpXIY4sLk) (1h27m)
 
+[![Bash vs. MCP](https://img.youtube.com/vi/RtXpXIY4sLk/0.jpg)](https://www.youtube.com/watch?v=RtXpXIY4sLk)
+
+Links:
+
+## Episode Overview
+
+This episode explores the fundamental trade-offs between using Bash and MCP (Model Control Protocol) for coding agent tool integration. The hosts demonstrate real-world examples comparing token usage, examine the impact on context windows, and share advanced techniques for optimizing coding agent performance.
+
+### Key Topics Covered
+
+- Token efficiency and the downsides of JSON in tool definitions
+- Understanding context windows and their impact on model accuracy
+- Writing your own drop-in replacements for MCP tools
+- Naming conventions and their critical role in model outputs
+- Dynamic context engineering techniques
+- Advanced tricks like .shims for forcing uv instead of python or bun instead of npm
+- Real-world applications and performance optimizations
+- Best practices for using MCPs effectively
+
+## Key Takeaways
+
+- There is no one-size-fits-all solution in coding agents - choose tools based on your specific needs
+- Understanding the underlying mechanics of models and context management is crucial for effective use
+- The accuracy of results can be significantly impacted by how you manage context
+- MCP tools can simplify integration for those unfamiliar with APIs, but come with token overhead
+- Dynamic context engineering can enhance the performance of coding agents
+- Naming conventions play a critical role in the accuracy of model outputs
+- Efficient token usage is essential for maximizing context window effectiveness
+- Real-world applications demonstrate the practical implications of these concepts
+- Flexibility in tool usage allows for better customization and performance
+- Community engagement and feedback are vital for continuous improvement
+
+## Episode Highlights
+
+> "Token efficiency isn't just about saving money - it's about preserving context space for what really matters."
+
+> "Naming conventions matter more than you think. The names you give your tools directly impact how accurately the model uses them."
+
+> "Don't just blindly use MCP for everything. Understand the trade-offs and pick the right tool for the job."
+
+## Resources
+
+- [Session Recording](https://www.youtube.com/watch?v=RtXpXIY4sLk)
+- [Discord Community](https://boundaryml.com/discord)
+- Sign up for the next session on [Luma](https://lu.ma/baml)
+
+## Whiteboards
+
+---
 
 ## Code Overview
 

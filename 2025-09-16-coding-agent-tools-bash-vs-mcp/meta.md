@@ -2,13 +2,7 @@
 guid: aitw-023
 title: "Bash vs. MCP - token efficient coding agent tooling"
 description: |
-  On this week's AI That Works, we'll explore the great Bash vs. MCP debate - what's better for helping coding agents do more?
-
-  We'll talk about:
-
-  - Token efficiency and Downsides of JSON
-  - Writing your own drop-ins for MCP tools
-  - Other advanced tricks like .shims for forcing uv instead of python or bun instead of npm
+  In this conversation, Dex and Vaibhav delve into the intricacies of coding agents, focusing on the debate between using MCP (Model Control Protocol) and Bash for tool integration. They explore the importance of understanding context windows, token management, and the efficiency of using different tools. The discussion emphasizes the significance of naming conventions, dynamic context engineering, and the engineering efforts required to optimize performance. They also share real-world applications, best practices for using MCPs, and engage with the community through a Q&A session.
 event_link: https://luma.com/kbjf88pm
 eventDate: 2025-09-16T18:00:00Z
 media:
