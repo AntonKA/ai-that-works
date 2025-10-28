@@ -460,6 +460,11 @@ pub const Parser = struct {
                 const token = self.advance().?;
                 return ast.Value{ .string = token.lexeme };
             },
+            .identifier => {
+                // Identifiers can be used as unquoted string values (e.g., provider fallback, strategy [ClientA, ClientB])
+                const token = self.advance().?;
+                return ast.Value{ .string = token.lexeme };
+            },
             .int_literal => {
                 const token = self.advance().?;
                 const value = std.fmt.parseInt(i64, token.lexeme, 10) catch {
@@ -519,7 +524,7 @@ pub const Parser = struct {
             return ast.Value{ .array = items };
         }
 
-        // Parse items
+        // Parse items (commas are optional in BAML arrays)
         while (true) {
             self.skipTrivia();
             const item = try self.parseValue();
@@ -530,7 +535,8 @@ pub const Parser = struct {
                 break;
             }
 
-            _ = try self.expect(.comma);
+            // Commas are optional in BAML arrays
+            _ = self.match(.comma);
         }
 
         return ast.Value{ .array = items };
@@ -958,7 +964,19 @@ pub const Parser = struct {
 
             if (std.mem.eql(u8, field_token.lexeme, "provider")) {
                 self.skipTrivia();
-                const provider_token = try self.expect(.string_literal);
+                // Provider can be a string literal ("openai") or identifier (fallback, round-robin)
+                const provider_token = if (self.match(.string_literal)) |tok|
+                    tok
+                else if (self.match(.identifier)) |tok|
+                    tok
+                else {
+                    const current = self.peek() orelse {
+                        try self.addError("Expected provider value (string or identifier)", .{}, 0, 0);
+                        return ParseError.UnexpectedEof;
+                    };
+                    try self.addError("Expected provider value (string or identifier), got {s}", .{@tagName(current.tag)}, current.line, current.column);
+                    return ParseError.UnexpectedToken;
+                };
                 client_decl.provider = provider_token.lexeme;
                 continue;
             } else if (std.mem.eql(u8, field_token.lexeme, "retry_policy")) {

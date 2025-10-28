@@ -2376,17 +2376,25 @@ minibaml gen baml_src --zig > generated.zig
   - Fixed strategy field parsing: type is tokenized as keyword_type
   - Updated formatter to output retry_policy field in clients
   - Added comprehensive test for client with retry_policy reference
+- [x] 28.10: Parse fallback provider with strategy list
+  - Extended parseValue() to support identifiers as string values
+  - Updated parseClientDecl() to accept identifier or string_literal for provider field
+  - Made commas optional in BAML arrays (space-separated style)
+  - Tested with fallback provider and strategy array containing client names
+- [x] 28.11: Parse round_robin provider with strategy list
+  - Provider "round_robin" (using underscore, not hyphen) now parses correctly
+  - Strategy arrays can contain unquoted identifiers
+  - Formatter outputs arrays with commas (both styles are valid)
+  - Full integration test with round_robin and fallback providers
 
 #### Tasks Remaining:
-- [ ] 28.10: Parse fallback provider with strategy list
-- [ ] 28.11: Parse round-robin provider with strategy list
 - [ ] 28.12: Update validator to validate retry_policy references
-- [ ] 28.13: Validate fallback and round-robin strategy lists
+- [ ] 28.13: Validate fallback and round_robin strategy lists
 - [ ] 28.14: Add integration tests with validation
 - [ ] 28.15: Update code generators to handle retry policies
 - [ ] 28.16: Update documentation
 
-**Progress**: Client retry_policy parsing is complete. Clients can now reference retry_policy declarations. Parser correctly handles keyword tokens for both "retry_policy" and "type" fields. All tests pass. Next steps: implement fallback/round-robin provider parsing and add validation for retry_policy references.
+**Progress**: Tasks 28.10 and 28.11 complete! Parser now supports fallback and round_robin providers with strategy arrays. Providers can be identifiers (fallback, round_robin) or strings. Strategy arrays contain unquoted client names. Commas are optional in BAML arrays. All tests pass. Next steps: add validation for retry_policy references and strategy lists.
 
 **Implementation Details (Completed)**:
 - Added `keyword_retry_policy` to TokenTag enum in lexer
@@ -2403,6 +2411,14 @@ minibaml gen baml_src --zig > generated.zig
   - Supports exponential_backoff with delay_ms, multiplier, and max_delay_ms parameters
 - Added retry_policy_decl case to all parser dispatch switches (multifile.zig, main.zig)
 - Implemented formatRetryPolicyDecl() with proper indentation and formatting
+- **Tasks 28.10-28.11 (Fallback/Round-robin providers)**:
+  - Extended `parseValue()` to accept `.identifier` token as string value
+  - Updated `parseClientDecl()` provider parsing to accept both `.string_literal` and `.identifier`
+  - Made commas optional in `parseArrayValue()` - arrays can be space-separated or comma-separated
+  - Providers can now be: `provider "openai"`, `provider fallback`, or `provider round_robin`
+  - Strategy arrays support unquoted identifiers: `strategy [ClientA ClientB ClientC]`
+  - Created test_strategies.baml with comprehensive fallback and round_robin examples
+  - All parser, formatter, and validation tests pass
 - All tests pass (2/2 test suites, 5/5 build steps)
 
 **Sample BAML Syntax** (from specs):
