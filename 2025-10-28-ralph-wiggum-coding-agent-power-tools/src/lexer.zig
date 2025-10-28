@@ -11,6 +11,7 @@ pub const TokenTag = enum {
     keyword_generator,
     keyword_template_string,
     keyword_type,
+    keyword_prompt,
 
     // Primitive types
     type_string,
@@ -37,6 +38,7 @@ pub const TokenTag = enum {
     question, // ?
     less_than, // <
     greater_than, // >
+    arrow, // ->
     colon, // :
     comma, // ,
     hash, // #
@@ -367,6 +369,7 @@ pub const Lexer = struct {
         if (std.mem.eql(u8, lexeme, "generator")) return .keyword_generator;
         if (std.mem.eql(u8, lexeme, "template_string")) return .keyword_template_string;
         if (std.mem.eql(u8, lexeme, "type")) return .keyword_type;
+        if (std.mem.eql(u8, lexeme, "prompt")) return .keyword_prompt;
         if (std.mem.eql(u8, lexeme, "env")) return .env;
 
         // Primitive types
@@ -575,10 +578,22 @@ pub const Lexer = struct {
             return self.scanNumber();
         }
 
-        // Handle negative numbers
+        // Handle negative numbers or arrow
         if (char == '-') {
             if (self.peekAt(1)) |next| {
-                if (isDigit(next)) {
+                if (next == '>') {
+                    // Arrow token ->
+                    const start_index = self.index;
+                    _ = self.advance(); // consume '-'
+                    _ = self.advance(); // consume '>'
+                    const lexeme = self.source[start_index..self.index];
+                    return Token{
+                        .tag = .arrow,
+                        .lexeme = lexeme,
+                        .line = start_line,
+                        .column = start_column,
+                    };
+                } else if (isDigit(next)) {
                     return self.scanNumber();
                 }
             }

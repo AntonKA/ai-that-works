@@ -2,7 +2,7 @@
 
 A BAML language implementation in Zig.
 
-## Project Status: PHASE 4 - Function Parsing
+## Project Status: PHASE 5 - Client & Template String Parsing
 
 ---
 
@@ -210,21 +210,39 @@ enum Status {
 
 ---
 
-### 🔵 PHASE 4: Function Parsing
-**Status**: NOT STARTED
+### ✅ PHASE 4: Function Parsing
+**Status**: ✅ COMPLETED
 **Goal**: Parse function declarations with prompts
 
-#### Tasks:
-- [ ] 4.1: Parse function declaration header
-- [ ] 4.2: Parse function parameters with types
-- [ ] 4.3: Parse return type
-- [ ] 4.4: Parse client specification (short form: string literal)
-- [ ] 4.5: Parse prompt block (block string with Jinja)
-- [ ] 4.6: Parse function attributes
-- [ ] 4.7: Add function parsing tests
-- [ ] 4.8: Handle multiline prompts correctly
+#### Tasks Completed:
+- [x] 4.1: Parse function declaration header
+- [x] 4.2: Parse function parameters with types
+- [x] 4.3: Parse return type
+- [x] 4.4: Parse client specification (short form: string literal)
+- [x] 4.5: Parse prompt block (block string with Jinja)
+- [x] 4.6: Parse function attributes
+- [x] 4.7: Add function parsing tests
+- [x] 4.8: Handle multiline prompts correctly
 
-**Validation**: Successfully parse:
+**Validation**: ✅ PASSED - Successfully parses all function features.
+
+**Implementation Details**:
+- Added `parseFunctionDecl()` function to parse complete function declarations
+- Added `parseParameter()` function to parse function parameters with colon syntax (param: Type)
+- Added `keyword_prompt` token to lexer
+- Added `arrow` token (`->`) to lexer for return type syntax
+- Comprehensive test suite with 8 new test cases covering:
+  - Functions without parameters
+  - Functions with single and multiple parameters
+  - Complex parameter types (arrays, primitives, image, etc.)
+  - Union return types
+  - Multiline prompts with `##"..."##` syntax
+  - Docstring support for functions
+  - Client specification parsing
+  - Integration tests with lexer + parser
+- All tests pass (`zig build test`)
+
+**Sample Successfully Parsed**:
 ```baml
 function ExtractPerson(text: string, image: image) -> Person {
   client "anthropic/claude-sonnet-4"

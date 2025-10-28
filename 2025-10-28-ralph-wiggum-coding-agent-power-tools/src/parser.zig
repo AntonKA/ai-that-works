@@ -770,6 +770,135 @@ pub const Parser = struct {
             .location = location,
         };
     }
+
+    /// Parse function declaration: function Name(params) -> ReturnType { client ... prompt ... }
+    pub fn parseFunctionDecl(self: *Parser) ParseError!ast.FunctionDecl {
+        // Capture docstring before function keyword
+        const docstring = self.skipTriviaCapturingDocstring();
+
+        const function_token = try self.expect(.keyword_function);
+        const location = ast.Location{
+            .line = function_token.line,
+            .column = function_token.column,
+        };
+
+        self.skipTrivia();
+        const name_token = try self.expect(.identifier);
+
+        var function_decl = ast.FunctionDecl.init(self.allocator, name_token.lexeme, location);
+        function_decl.docstring = docstring;
+
+        errdefer function_decl.deinit(self.allocator);
+
+        // Parse parameters: (param1: Type, param2: Type)
+        self.skipTrivia();
+        _ = try self.expect(.lparen);
+
+        // Parse parameter list
+        while (!self.check(.rparen) and !self.isAtEnd()) {
+            self.skipTrivia();
+
+            if (self.check(.rparen)) break;
+
+            const param = try self.parseParameter();
+            try function_decl.parameters.append(param);
+
+            self.skipTrivia();
+            if (self.match(.comma)) |_| {
+                continue;
+            } else if (self.check(.rparen)) {
+                break;
+            } else {
+                const current = self.peek() orelse {
+                    try self.addError("Expected ',' or ')' in parameter list", .{}, 0, 0);
+                    return ParseError.UnexpectedEof;
+                };
+                try self.addError("Expected ',' or ')' in parameter list", .{}, current.line, current.column);
+                return ParseError.UnexpectedToken;
+            }
+        }
+
+        self.skipTrivia();
+        _ = try self.expect(.rparen);
+
+        // Parse return type: -> Type
+        self.skipTrivia();
+        _ = try self.expect(.arrow);
+        self.skipTrivia();
+
+        const return_type = try self.parseTypeExpr();
+        function_decl.return_type = return_type;
+
+        // Parse function body: { client ... prompt ... }
+        self.skipTrivia();
+        _ = try self.expect(.lbrace);
+
+        // Parse client and prompt (and optionally attributes)
+        while (!self.check(.rbrace) and !self.isAtEnd()) {
+            self.skipTrivia();
+
+            if (self.check(.rbrace)) break;
+
+            // Check for function-level attribute (@)
+            if (self.check(.at)) {
+                const attr = try self.parseAttribute();
+                try function_decl.attributes.append(attr);
+                continue;
+            }
+
+            // Check for 'client' keyword
+            if (self.match(.keyword_client)) |_| {
+                self.skipTrivia();
+                const client_token = try self.expect(.string_literal);
+                function_decl.client = client_token.lexeme;
+                continue;
+            }
+
+            // Check for 'prompt' keyword
+            if (self.match(.keyword_prompt)) |_| {
+                self.skipTrivia();
+                const prompt_token = try self.expect(.block_string);
+                function_decl.prompt = prompt_token.lexeme;
+                continue;
+            }
+
+            // Unknown token in function body
+            const current = self.peek() orelse {
+                try self.addError("Expected 'client', 'prompt', or '@' in function body", .{}, 0, 0);
+                return ParseError.UnexpectedEof;
+            };
+            try self.addError("Expected 'client', 'prompt', or '@' in function body, got {s}", .{@tagName(current.tag)}, current.line, current.column);
+            return ParseError.UnexpectedToken;
+        }
+
+        self.skipTrivia();
+        _ = try self.expect(.rbrace);
+
+        return function_decl;
+    }
+
+    /// Parse function parameter: name: Type
+    fn parseParameter(self: *Parser) ParseError!ast.Parameter {
+        self.skipTrivia();
+
+        const name_token = try self.expect(.identifier);
+        const location = ast.Location{
+            .line = name_token.line,
+            .column = name_token.column,
+        };
+
+        self.skipTrivia();
+        _ = try self.expect(.colon);
+        self.skipTrivia();
+
+        const type_expr = try self.parseTypeExpr();
+
+        return ast.Parameter{
+            .name = name_token.lexeme,
+            .type_expr = type_expr,
+            .location = location,
+        };
+    }
 };
 
 /// Parser error information
@@ -1588,4 +1717,261 @@ test "Parser: Integration - Parse enum from lexer output" {
     try std.testing.expectEqualStrings("Active", enum_decl.values.items[0].name);
     try std.testing.expectEqualStrings("Inactive", enum_decl.values.items[1].name);
     try std.testing.expectEqualStrings("Pending", enum_decl.values.items[2].name);
+}
+
+test "Parser: Parse simple function without parameters" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\function GetGreeting() -> string {
+        \\  client "openai/gpt-4"
+        \\  prompt #"Say hello"#
+        \\}
+    ;
+
+    var lex = Lexer.init(allocator, source);
+    defer lex.deinit();
+
+    const tokens = try lex.tokenize();
+    defer allocator.free(tokens);
+
+    var parser = Parser.init(allocator, tokens);
+    defer parser.deinit();
+
+    var func_decl = try parser.parseFunctionDecl();
+    defer func_decl.deinit(allocator);
+
+    try std.testing.expectEqualStrings("GetGreeting", func_decl.name);
+    try std.testing.expect(func_decl.parameters.items.len == 0);
+    try std.testing.expect(func_decl.return_type.* == .primitive);
+    try std.testing.expect(func_decl.return_type.primitive == .string);
+    try std.testing.expect(func_decl.client != null);
+    try std.testing.expectEqualStrings("openai/gpt-4", func_decl.client.?);
+    try std.testing.expect(func_decl.prompt != null);
+    try std.testing.expectEqualStrings("Say hello", func_decl.prompt.?);
+}
+
+test "Parser: Parse function with single parameter" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\function Greet(name: string) -> string {
+        \\  client "openai/gpt-4"
+        \\  prompt #"Hello {{ name }}"#
+        \\}
+    ;
+
+    var lex = Lexer.init(allocator, source);
+    defer lex.deinit();
+
+    const tokens = try lex.tokenize();
+    defer allocator.free(tokens);
+
+    var parser = Parser.init(allocator, tokens);
+    defer parser.deinit();
+
+    var func_decl = try parser.parseFunctionDecl();
+    defer func_decl.deinit(allocator);
+
+    try std.testing.expectEqualStrings("Greet", func_decl.name);
+    try std.testing.expect(func_decl.parameters.items.len == 1);
+
+    const param = func_decl.parameters.items[0];
+    try std.testing.expectEqualStrings("name", param.name);
+    try std.testing.expect(param.type_expr.* == .primitive);
+    try std.testing.expect(param.type_expr.primitive == .string);
+}
+
+test "Parser: Parse function with multiple parameters" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\function Process(text: string, count: int, flag: bool) -> string {
+        \\  client "anthropic/claude"
+        \\  prompt #"Process: {{ text }}"#
+        \\}
+    ;
+
+    var lex = Lexer.init(allocator, source);
+    defer lex.deinit();
+
+    const tokens = try lex.tokenize();
+    defer allocator.free(tokens);
+
+    var parser = Parser.init(allocator, tokens);
+    defer parser.deinit();
+
+    var func_decl = try parser.parseFunctionDecl();
+    defer func_decl.deinit(allocator);
+
+    try std.testing.expectEqualStrings("Process", func_decl.name);
+    try std.testing.expect(func_decl.parameters.items.len == 3);
+
+    try std.testing.expectEqualStrings("text", func_decl.parameters.items[0].name);
+    try std.testing.expectEqualStrings("count", func_decl.parameters.items[1].name);
+    try std.testing.expectEqualStrings("flag", func_decl.parameters.items[2].name);
+}
+
+test "Parser: Parse function with complex parameter types" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\function Extract(data: string, img: image, tags: string[]) -> Person | null {
+        \\  client "anthropic/claude"
+        \\  prompt #"Extract from {{ data }}"#
+        \\}
+    ;
+
+    var lex = Lexer.init(allocator, source);
+    defer lex.deinit();
+
+    const tokens = try lex.tokenize();
+    defer allocator.free(tokens);
+
+    var parser = Parser.init(allocator, tokens);
+    defer parser.deinit();
+
+    var func_decl = try parser.parseFunctionDecl();
+    defer func_decl.deinit(allocator);
+
+    try std.testing.expectEqualStrings("Extract", func_decl.name);
+    try std.testing.expect(func_decl.parameters.items.len == 3);
+
+    // Check first param: data: string
+    const param1 = func_decl.parameters.items[0];
+    try std.testing.expectEqualStrings("data", param1.name);
+    try std.testing.expect(param1.type_expr.* == .primitive);
+
+    // Check second param: img: image
+    const param2 = func_decl.parameters.items[1];
+    try std.testing.expectEqualStrings("img", param2.name);
+    try std.testing.expect(param2.type_expr.* == .primitive);
+    try std.testing.expect(param2.type_expr.primitive == .image);
+
+    // Check third param: tags: string[]
+    const param3 = func_decl.parameters.items[2];
+    try std.testing.expectEqualStrings("tags", param3.name);
+    try std.testing.expect(param3.type_expr.* == .array);
+    try std.testing.expect(param3.type_expr.array.* == .primitive);
+}
+
+test "Parser: Parse function with union return type" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\function Query(q: string) -> string | int | null {
+        \\  client "openai/gpt-4"
+        \\  prompt #"Query: {{ q }}"#
+        \\}
+    ;
+
+    var lex = Lexer.init(allocator, source);
+    defer lex.deinit();
+
+    const tokens = try lex.tokenize();
+    defer allocator.free(tokens);
+
+    var parser = Parser.init(allocator, tokens);
+    defer parser.deinit();
+
+    var func_decl = try parser.parseFunctionDecl();
+    defer func_decl.deinit(allocator);
+
+    try std.testing.expectEqualStrings("Query", func_decl.name);
+    try std.testing.expect(func_decl.return_type.* == .union_type);
+    try std.testing.expect(func_decl.return_type.union_type.types.items.len == 3);
+}
+
+test "Parser: Parse function with multiline prompt" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\function Extract(text: string) -> Person {
+        \\  client "anthropic/claude-sonnet-4"
+        \\  prompt ##"
+        \\    Extract person from: {{ text }}
+        \\
+        \\    {{ ctx.output_format }}
+        \\  "##
+        \\}
+    ;
+
+    var lex = Lexer.init(allocator, source);
+    defer lex.deinit();
+
+    const tokens = try lex.tokenize();
+    defer allocator.free(tokens);
+
+    var parser = Parser.init(allocator, tokens);
+    defer parser.deinit();
+
+    var func_decl = try parser.parseFunctionDecl();
+    defer func_decl.deinit(allocator);
+
+    try std.testing.expectEqualStrings("Extract", func_decl.name);
+    try std.testing.expect(func_decl.prompt != null);
+    // Verify multiline prompt contains expected content
+    try std.testing.expect(std.mem.indexOf(u8, func_decl.prompt.?, "Extract person from") != null);
+    try std.testing.expect(std.mem.indexOf(u8, func_decl.prompt.?, "ctx.output_format") != null);
+}
+
+test "Parser: Parse function with docstring" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\/// Greets a person by name
+        \\function GreetPerson(p: Person) -> string {
+        \\  client "openai/gpt-4"
+        \\  prompt #"Hello {{ p.name }}"#
+        \\}
+    ;
+
+    var lex = Lexer.init(allocator, source);
+    defer lex.deinit();
+
+    const tokens = try lex.tokenize();
+    defer allocator.free(tokens);
+
+    var parser = Parser.init(allocator, tokens);
+    defer parser.deinit();
+
+    var func_decl = try parser.parseFunctionDecl();
+    defer func_decl.deinit(allocator);
+
+    try std.testing.expectEqualStrings("GreetPerson", func_decl.name);
+    try std.testing.expect(func_decl.docstring != null);
+    try std.testing.expectEqualStrings(" Greets a person by name", func_decl.docstring.?);
+}
+
+test "Parser: Integration - Parse complete function from test.baml" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\function Greet(p: Person) -> string {
+        \\  client "openai/gpt-4"
+        \\  prompt #"
+        \\    Say hello to {{ p.name }}
+        \\  "#
+        \\}
+    ;
+
+    var lex = Lexer.init(allocator, source);
+    defer lex.deinit();
+
+    const tokens = try lex.tokenize();
+    defer allocator.free(tokens);
+
+    var parser = Parser.init(allocator, tokens);
+    defer parser.deinit();
+
+    var func_decl = try parser.parseFunctionDecl();
+    defer func_decl.deinit(allocator);
+
+    try std.testing.expectEqualStrings("Greet", func_decl.name);
+    try std.testing.expect(func_decl.parameters.items.len == 1);
+    try std.testing.expectEqualStrings("p", func_decl.parameters.items[0].name);
+    try std.testing.expect(func_decl.return_type.* == .primitive);
+    try std.testing.expect(func_decl.return_type.primitive == .string);
+    try std.testing.expectEqualStrings("openai/gpt-4", func_decl.client.?);
+    try std.testing.expect(std.mem.indexOf(u8, func_decl.prompt.?, "Say hello to") != null);
 }
