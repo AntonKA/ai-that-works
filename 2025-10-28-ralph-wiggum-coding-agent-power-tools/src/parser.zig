@@ -941,14 +941,32 @@ pub const Parser = struct {
 
             if (self.check(.rbrace)) break;
 
-            // Check for 'provider' keyword
-            if (self.match(.identifier)) |field_token| {
-                if (std.mem.eql(u8, field_token.lexeme, "provider")) {
-                    self.skipTrivia();
-                    const provider_token = try self.expect(.string_literal);
-                    client_decl.provider = provider_token.lexeme;
-                    continue;
-                } else if (std.mem.eql(u8, field_token.lexeme, "options")) {
+            // Check for 'provider', 'retry_policy', or 'options' keyword
+            // Note: retry_policy is lexed as keyword_retry_policy, so we handle both
+            const field_token = if (self.match(.keyword_retry_policy)) |tok|
+                tok
+            else if (self.match(.identifier)) |tok|
+                tok
+            else {
+                const current = self.peek() orelse {
+                    try self.addError("Expected 'provider', 'retry_policy', or 'options' in client body", .{}, 0, 0);
+                    return ParseError.UnexpectedEof;
+                };
+                try self.addError("Expected 'provider', 'retry_policy', or 'options' in client body, got {s}", .{@tagName(current.tag)}, current.line, current.column);
+                return ParseError.UnexpectedToken;
+            };
+
+            if (std.mem.eql(u8, field_token.lexeme, "provider")) {
+                self.skipTrivia();
+                const provider_token = try self.expect(.string_literal);
+                client_decl.provider = provider_token.lexeme;
+                continue;
+            } else if (std.mem.eql(u8, field_token.lexeme, "retry_policy")) {
+                self.skipTrivia();
+                const policy_token = try self.expect(.identifier);
+                client_decl.retry_policy = policy_token.lexeme;
+                continue;
+            } else if (std.mem.eql(u8, field_token.lexeme, "options")) {
                     // Parse options block: options { key value, ... }
                     self.skipTrivia();
                     _ = try self.expect(.lbrace);
@@ -979,14 +997,6 @@ pub const Parser = struct {
                     try self.addError("Unknown field in client declaration: {s}", .{field_token.lexeme}, field_token.line, field_token.column);
                     return ParseError.UnexpectedToken;
                 }
-            }
-
-            const current = self.peek() orelse {
-                try self.addError("Expected 'provider' or 'options' in client body", .{}, 0, 0);
-                return ParseError.UnexpectedEof;
-            };
-            try self.addError("Expected 'provider' or 'options' in client body, got {s}", .{@tagName(current.tag)}, current.line, current.column);
-            return ParseError.UnexpectedToken;
         }
 
         self.skipTrivia();
@@ -1255,7 +1265,11 @@ pub const Parser = struct {
                     self.skipTrivia();
                     if (self.check(.rbrace)) break;
 
-                    const strategy_field_token = try self.expect(.identifier);
+                    // Strategy field names can be identifiers or the "type" keyword
+                    const strategy_field_token = if (self.match(.keyword_type)) |tok|
+                        tok
+                    else
+                        try self.expect(.identifier);
                     const strategy_field = strategy_field_token.lexeme;
 
                     self.skipTrivia();
@@ -2547,6 +2561,47 @@ test "Parser: Parse client with nested options object" {
 
     const auth = headers.object.get("Authorization").?;
     try std.testing.expectEqualStrings("Bearer token", auth.string);
+}
+
+test "Parser: Parse client with retry_policy" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\client<llm> MyClient {
+        \\  provider "anthropic"
+        \\  retry_policy MyRetryPolicy
+        \\  options {
+        \\    model "claude-sonnet-4"
+        \\    api_key env.ANTHROPIC_API_KEY
+        \\  }
+        \\}
+    ;
+
+    var lex = Lexer.init(allocator, source);
+    defer lex.deinit();
+
+    const tokens = try lex.tokenize();
+    defer allocator.free(tokens);
+
+    var parser = Parser.init(allocator, tokens);
+    defer parser.deinit();
+
+    var client_decl = try parser.parseClientDecl();
+    defer client_decl.deinit(allocator);
+
+    try std.testing.expectEqualStrings("MyClient", client_decl.name);
+    try std.testing.expectEqualStrings("llm", client_decl.client_type);
+    try std.testing.expectEqualStrings("anthropic", client_decl.provider);
+    try std.testing.expect(client_decl.retry_policy != null);
+    try std.testing.expectEqualStrings("MyRetryPolicy", client_decl.retry_policy.?);
+    try std.testing.expect(client_decl.options.count() == 2);
+
+    const model = client_decl.options.get("model").?;
+    try std.testing.expectEqualStrings("claude-sonnet-4", model.string);
+
+    const api_key = client_decl.options.get("api_key").?;
+    try std.testing.expect(api_key == .env_var);
+    try std.testing.expectEqualStrings("ANTHROPIC_API_KEY", api_key.env_var);
 }
 
 test "Parser: Parse simple template_string without parameters" {

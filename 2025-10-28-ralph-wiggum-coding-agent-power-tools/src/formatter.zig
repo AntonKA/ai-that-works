@@ -367,6 +367,13 @@ pub const Formatter = struct {
         try self.writer.writeAll(client_decl.provider);
         try self.writer.writeAll("\"\n");
 
+        if (client_decl.retry_policy) |policy| {
+            try self.writeIndent();
+            try self.writer.writeAll("retry_policy ");
+            try self.writer.writeAll(policy);
+            try self.writer.writeAll("\n");
+        }
+
         if (client_decl.options.count() > 0) {
             try self.writeIndent();
             try self.writer.writeAll("options {\n");
