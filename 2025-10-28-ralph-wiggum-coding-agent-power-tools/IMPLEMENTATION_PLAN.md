@@ -2,7 +2,7 @@
 
 A BAML language implementation in Zig.
 
-## Project Status: PHASE 13 - Documentation ✅ COMPLETED
+## Project Status: PHASE 15 - Go Code Generation ✅ COMPLETED
 
 ---
 
@@ -973,7 +973,96 @@ minibaml gen test.baml > models.py
 
 ---
 
-## Current Milestone: PHASE 14 - COMPLETED ✅
+### ✅ PHASE 15: Go Code Generation
+**Status**: ✅ COMPLETED
+**Goal**: Generate idiomatic Go code from BAML
+
+#### Tasks Completed:
+- [x] 15.1: Implement GoGenerator struct in codegen.zig
+- [x] 15.2: Map BAML types to Go types
+  - Primitives: string→string, int→int, float→float64, bool→bool
+  - Complex types: Optional→pointer, Array→slice, Map→map, Union→interface{}
+  - Media types (image, audio, video, pdf) → interface{}
+- [x] 15.3: Generate Go struct definitions from BAML classes
+  - Capitalize field names for export
+  - Add JSON tags with support for @alias attributes
+  - Preserve docstrings as Go comments
+- [x] 15.4: Generate Go enums using const blocks
+  - Type-safe string enums
+  - Enum values follow Go naming conventions (EnumNameValue)
+- [x] 15.5: Generate Go function stubs
+  - Proper Go function signatures with named return types
+  - Return (Type, error) for idiomatic error handling
+  - Preserve prompts as multi-line comments
+- [x] 15.6: Add comprehensive tests (6 test cases)
+  - Simple struct generation
+  - Simple enum generation
+  - Optional and array types
+  - Map types
+  - Function with parameters
+  - Field with @alias attribute
+- [x] 15.7: Add --go flag to CLI generate command
+- [x] 15.8: Export GoGenerator from root.zig
+- [x] 15.9: Fix Zig 0.15.1 compatibility issues in jinja.zig
+  - Fixed ArrayList.init() calls to use ArrayList{} syntax
+  - Fixed ArrayList.pop() to access items directly
+- [x] 15.10: Verify generated Go code compiles
+
+**Validation**: ✅ PASSED - Generated Go code compiles successfully
+
+**Implementation Details**:
+- Created GoGenerator in codegen.zig (300+ lines)
+- Type mapping follows Go idioms:
+  - Optionals use pointers (*Type)
+  - Arrays use slices ([]Type)
+  - Maps use Go maps (map[K]V)
+  - Unions with null use pointers, others use interface{}
+- Generated structs with JSON tags for serialization
+- Enums use typed string constants
+- Functions return (Type, error) tuples
+- All field names capitalized for export
+- Comprehensive test suite (6 tests)
+- CLI updated with --go flag
+- All tests pass (zig build test)
+
+**Sample Generated Code**:
+```go
+package baml
+
+import (
+	"errors"
+)
+
+type Person struct {
+	Name string `json:"name"`
+	Age *int `json:"age"`
+	Email string `json:"email_address"`
+}
+
+type Status string
+
+const (
+	StatusActive Status = "Active"
+	StatusInactive Status = "Inactive"
+)
+
+func Greet(p Person) (string, error) {
+	return *new(string), errors.New("This is a stub for LLM function")
+}
+```
+
+**Test Results**: ✅ All tests pass - Generated Go code compiles with `go build`
+
+**CLI Usage**:
+```bash
+# Generate Go code
+minibaml gen test.baml --go > generated.go
+minibaml gen baml_src --go > generated.go
+```
+
+---
+
+## Current Milestone: PHASE 15 - COMPLETED ✅
 
 **Achievements**:
 - ✅ Complete lexer with 150+ test cases
@@ -987,6 +1076,7 @@ minibaml gen test.baml > models.py
 - ✅ Pretty printer and formatter with full BAML support
 - ✅ Python code generator with Pydantic support
 - ✅ TypeScript code generator with full type support
+- ✅ Go code generator with idiomatic Go types
 - ✅ Multi-file project support with recursive directory scanning
 - ✅ Complete CLI tool with all essential commands:
   - `minibaml <file>` - Tokenize
@@ -995,6 +1085,7 @@ minibaml gen test.baml > models.py
   - `minibaml fmt <file>` - Format
   - `minibaml generate <path>` - Generate Python code (file or directory)
   - `minibaml generate <path> --typescript` - Generate TypeScript code
+  - `minibaml generate <path> --go` - Generate Go code
   - `minibaml generate <path> --typebuilder` - Generate TypeBuilder module
   - `--version` and `--help` flags
 - ✅ Zig 0.15.1 full compatibility (ArrayList API, recursive error sets)
@@ -1086,7 +1177,7 @@ minibaml gen test.baml > models.py
 ---
 
 **Next Steps** (Optional Future Enhancements):
-- Additional code generators for Go and Ruby
+- Additional code generator for Ruby
 - Full runtime TypeBuilder integration with function execution
 - Streaming support for LLM function calls
 - Client registry for managing multiple LLM providers

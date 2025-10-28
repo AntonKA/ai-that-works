@@ -614,7 +614,7 @@ pub const JinjaParser = struct {
                         .for_start = JinjaForStatement{
                             .loop_var = loop_var,
                             .iterable = "",
-                            .iterable_path = std.ArrayList([]const u8).init(allocator),
+                            .iterable_path = std.ArrayList([]const u8){},
                             .line = start_token.line,
                             .column = start_token.column,
                         },
@@ -626,7 +626,7 @@ pub const JinjaParser = struct {
 
         // Parse iterable (could be simple identifier or path like ctx.client.provider)
         var iterable: []const u8 = "";
-        var iterable_path = std.ArrayList([]const u8).init(allocator);
+        var iterable_path = std.ArrayList([]const u8){};
         errdefer iterable_path.deinit(allocator);
 
         if (self.pos < self.tokens.len and self.peek().type == .identifier) {
@@ -670,7 +670,7 @@ pub const JinjaParser = struct {
 
         // Collect condition tokens until statement_end
         const condition_start = self.pos;
-        var condition_parts = std.ArrayList([]const u8).init(allocator);
+        var condition_parts = std.ArrayList([]const u8){};
         defer condition_parts.deinit(allocator);
 
         while (self.pos < self.tokens.len and self.peek().type != .statement_end) {
@@ -778,7 +778,7 @@ pub const JinjaValidator = struct {
             .allocator = allocator,
             .errors = std.ArrayList(ValidationError){},
             .param_names = std.StringHashMap(void).init(allocator),
-            .statement_stack = std.ArrayList(StatementContext).init(allocator),
+            .statement_stack = std.ArrayList(StatementContext){},
             .loop_vars = std.StringHashMap(void).init(allocator),
         };
     }
@@ -889,7 +889,8 @@ pub const JinjaValidator = struct {
                     try self.addError("Unmatched {% endfor %}", end_stmt.line, end_stmt.column);
                     return;
                 }
-                const context = self.statement_stack.pop();
+                const context = self.statement_stack.items[self.statement_stack.items.len - 1];
+                _ = self.statement_stack.pop();
                 if (context.type != .for_loop) {
                     try self.addError("{% endfor %} without matching {% for %}", end_stmt.line, end_stmt.column);
                 }
@@ -931,7 +932,8 @@ pub const JinjaValidator = struct {
                     try self.addError("Unmatched {% endif %}", end_stmt.line, end_stmt.column);
                     return;
                 }
-                const context = self.statement_stack.pop();
+                const context = self.statement_stack.items[self.statement_stack.items.len - 1];
+                _ = self.statement_stack.pop();
                 if (context.type != .if_block) {
                     try self.addError("{% endif %} without matching {% if %}", end_stmt.line, end_stmt.column);
                 }
