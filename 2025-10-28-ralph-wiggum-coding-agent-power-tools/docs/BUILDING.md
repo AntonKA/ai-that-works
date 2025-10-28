@@ -87,15 +87,19 @@ print('Available types:', [name for name in dir(baml_client) if not name.startsw
 "
 ```
 
-For a more thorough test, create a test script that validates the generated Pydantic models:
+For a more thorough test, create a test script that validates the generated Pydantic models and function stubs:
 
 ```python
 # test_generated.py
 import baml_client
 from pydantic import ValidationError
 
+print("=" * 60)
+print("MiniBaml Generated Code Test")
+print("=" * 60)
+
 # Test that generated types exist
-print("Testing generated types...")
+print("\n1. Testing generated types...")
 assert hasattr(baml_client, 'Person'), "Person class not found"
 assert hasattr(baml_client, 'Address'), "Address class not found"
 assert hasattr(baml_client, 'Status'), "Status enum not found"
@@ -103,19 +107,17 @@ assert hasattr(baml_client, 'Priority'), "Priority enum not found"
 print("✓ All expected types found")
 
 # Test enum values
-print("\nTesting Status enum values:")
-print(f"  - {baml_client.Status.Active.value}")
-print(f"  - {baml_client.Status.Inactive.value}")
-print(f"  - {baml_client.Status.Pending.value}")
+print("\n2. Testing Status enum values:")
+for status in [baml_client.Status.Active, baml_client.Status.Inactive, baml_client.Status.Pending]:
+    print(f"  - {status.value}")
 
-print("\nTesting Priority enum values:")
-print(f"  - {baml_client.Priority.Low.value}")
-print(f"  - {baml_client.Priority.Medium.value}")
-print(f"  - {baml_client.Priority.High.value}")
-print(f"  - {baml_client.Priority.Urgent.value}")
+print("\n3. Testing Priority enum values:")
+for priority in [baml_client.Priority.Low, baml_client.Priority.Medium,
+                  baml_client.Priority.High, baml_client.Priority.Urgent]:
+    print(f"  - {priority.value}")
 
 # Test instantiating classes
-print("\nTesting class instantiation...")
+print("\n4. Testing class instantiation...")
 address = baml_client.Address(
     street="123 Main St",
     city="San Francisco",
@@ -132,7 +134,7 @@ person = baml_client.Person(
 print(f"✓ Created Person: {person.name}, age {person.age}")
 
 # Test Pydantic validation
-print("\nTesting Pydantic validation...")
+print("\n5. Testing Pydantic validation...")
 try:
     bad_person = baml_client.Person(
         name="Jane",
@@ -143,7 +145,37 @@ try:
 except ValidationError as e:
     print(f"✓ Validation correctly rejected invalid data")
 
-print("\n✓ All tests passed!")
+# Test generated functions
+print("\n6. Testing generated function stubs...")
+assert hasattr(baml_client, 'Greet'), "Greet function not found"
+assert hasattr(baml_client, 'ExtractPerson'), "ExtractPerson function not found"
+print("✓ Function definitions found")
+
+# Verify functions have correct signatures
+print("\n7. Verifying function signatures...")
+import inspect
+
+greet_sig = inspect.signature(baml_client.Greet)
+print(f"  Greet signature: {greet_sig}")
+assert 'p' in greet_sig.parameters, "Greet should have 'p' parameter"
+
+extract_sig = inspect.signature(baml_client.ExtractPerson)
+print(f"  ExtractPerson signature: {extract_sig}")
+assert 'text' in extract_sig.parameters, "ExtractPerson should have 'text' parameter"
+
+print("\n8. Testing function stub behavior...")
+try:
+    baml_client.Greet(person)
+    print("✗ Function should raise NotImplementedError")
+except NotImplementedError as e:
+    print(f"✓ Function correctly raises NotImplementedError: {e}")
+
+print("\n" + "=" * 60)
+print("✓ All tests passed!")
+print("=" * 60)
+print("\nNote: MiniBaml is a compiler demo. Generated functions are")
+print("stubs and don't make actual LLM calls. For a complete runtime,")
+print("see the full BAML project at https://docs.boundaryml.com")
 ```
 
 Run the test:
@@ -154,28 +186,48 @@ python3 test_generated.py
 
 Expected output:
 ```
-Testing generated types...
+============================================================
+MiniBaml Generated Code Test
+============================================================
+
+1. Testing generated types...
 ✓ All expected types found
 
-Testing Status enum values:
+2. Testing Status enum values:
   - Active
   - Inactive
   - Pending
 
-Testing Priority enum values:
+3. Testing Priority enum values:
   - Low
   - Medium
   - High
   - Urgent
 
-Testing class instantiation...
+4. Testing class instantiation...
 ✓ Created Address: San Francisco, USA
 ✓ Created Person: John Doe, age 30
 
-Testing Pydantic validation...
+5. Testing Pydantic validation...
 ✓ Validation correctly rejected invalid data
 
+6. Testing generated function stubs...
+✓ Function definitions found
+
+7. Verifying function signatures...
+  Greet signature: (p: Person) -> str
+  ExtractPerson signature: (text: str) -> Optional[Person]
+
+8. Testing function stub behavior...
+✓ Function correctly raises NotImplementedError: This is a stub for LLM function
+
+============================================================
 ✓ All tests passed!
+============================================================
+
+Note: MiniBaml is a compiler demo. Generated functions are
+stubs and don't make actual LLM calls. For a complete runtime,
+see the full BAML project at https://docs.boundaryml.com
 ```
 
 ## Running Against test_baml_src
