@@ -12,6 +12,7 @@ pub const TokenTag = enum {
     keyword_template_string,
     keyword_type,
     keyword_prompt,
+    keyword_retry_policy,
 
     // Primitive types
     type_string,
@@ -370,6 +371,7 @@ pub const Lexer = struct {
         if (std.mem.eql(u8, lexeme, "template_string")) return .keyword_template_string;
         if (std.mem.eql(u8, lexeme, "type")) return .keyword_type;
         if (std.mem.eql(u8, lexeme, "prompt")) return .keyword_prompt;
+        if (std.mem.eql(u8, lexeme, "retry_policy")) return .keyword_retry_policy;
         if (std.mem.eql(u8, lexeme, "env")) return .env;
 
         // Primitive types

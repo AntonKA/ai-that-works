@@ -37,6 +37,7 @@ pub const DeclarationTag = enum {
     generator_decl,
     template_string_decl,
     type_alias_decl,
+    retry_policy_decl,
 };
 
 /// A top-level declaration in BAML
@@ -49,6 +50,7 @@ pub const Declaration = union(DeclarationTag) {
     generator_decl: GeneratorDecl,
     template_string_decl: TemplateStringDecl,
     type_alias_decl: TypeAliasDecl,
+    retry_policy_decl: RetryPolicyDecl,
 
     pub fn deinit(self: *Declaration, allocator: std.mem.Allocator) void {
         switch (self.*) {
@@ -60,6 +62,7 @@ pub const Declaration = union(DeclarationTag) {
             .generator_decl => |*d| d.deinit(allocator),
             .template_string_decl => |*d| d.deinit(allocator),
             .type_alias_decl => |*d| d.deinit(allocator),
+            .retry_policy_decl => |*d| d.deinit(allocator),
         }
     }
 };
@@ -165,11 +168,12 @@ pub const FunctionDecl = struct {
     }
 };
 
-/// Client declaration: client<llm> Name { provider ... options { ... } }
+/// Client declaration: client<llm> Name { provider ... retry_policy ... options { ... } }
 pub const ClientDecl = struct {
     name: []const u8,
     client_type: []const u8, // e.g., "llm"
     provider: []const u8,
+    retry_policy: ?[]const u8, // Optional retry policy reference
     options: std.StringHashMap(Value),
     location: Location,
 
@@ -178,6 +182,7 @@ pub const ClientDecl = struct {
             .name = name,
             .client_type = client_type,
             .provider = "",
+            .retry_policy = null,
             .options = std.StringHashMap(Value).init(allocator),
             .location = location,
         };
@@ -284,6 +289,54 @@ pub const TypeAliasDecl = struct {
     pub fn deinit(self: *TypeAliasDecl, allocator: std.mem.Allocator) void {
         self.type_expr.deinit(allocator);
         allocator.destroy(self.type_expr);
+    }
+};
+
+/// Retry strategy type
+pub const RetryStrategyTag = enum {
+    constant_delay,
+    exponential_backoff,
+};
+
+/// Constant delay retry strategy
+pub const ConstantDelayStrategy = struct {
+    delay_ms: u32,
+};
+
+/// Exponential backoff retry strategy
+pub const ExponentialBackoffStrategy = struct {
+    delay_ms: u32,
+    multiplier: f64,
+    max_delay_ms: u32,
+};
+
+/// Retry strategy union
+pub const RetryStrategy = union(RetryStrategyTag) {
+    constant_delay: ConstantDelayStrategy,
+    exponential_backoff: ExponentialBackoffStrategy,
+};
+
+/// Retry policy declaration: retry_policy Name { max_retries N strategy { ... } }
+pub const RetryPolicyDecl = struct {
+    name: []const u8,
+    max_retries: u32,
+    strategy: ?RetryStrategy,
+    location: Location,
+
+    pub fn init(allocator: std.mem.Allocator, name: []const u8, max_retries: u32, location: Location) RetryPolicyDecl {
+        _ = allocator;
+        return RetryPolicyDecl{
+            .name = name,
+            .max_retries = max_retries,
+            .strategy = null,
+            .location = location,
+        };
+    }
+
+    pub fn deinit(self: *RetryPolicyDecl, allocator: std.mem.Allocator) void {
+        _ = self;
+        _ = allocator;
+        // No dynamic allocations to free
     }
 };
 

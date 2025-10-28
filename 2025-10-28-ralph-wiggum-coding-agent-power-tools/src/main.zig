@@ -241,6 +241,7 @@ fn parseFile(allocator: std.mem.Allocator, filename: []const u8) !ParseResult {
             .keyword_test => .{ .test_decl = try parser.parseTestDecl() },
             .keyword_generator => .{ .generator_decl = try parser.parseGeneratorDecl() },
             .keyword_template_string => .{ .template_string_decl = try parser.parseTemplateStringDecl() },
+            .keyword_retry_policy => .{ .retry_policy_decl = try parser.parseRetryPolicyDecl() },
             else => {
                 std.debug.print("Error: Unexpected token '{s}' at line {d}, col {d}\n", .{
                     @tagName(current.tag),
@@ -338,6 +339,7 @@ fn parseSingleFile(allocator: std.mem.Allocator, filename: []const u8) !void {
             .generator_decl => |gen| std.debug.print("generator {s}", .{gen.name}),
             .template_string_decl => |template| std.debug.print("template_string {s} ({d} parameters)", .{ template.name, template.parameters.items.len }),
             .type_alias_decl => |alias| std.debug.print("type {s}", .{alias.name}),
+            .retry_policy_decl => |retry_policy| std.debug.print("retry_policy {s} (max_retries: {d})", .{ retry_policy.name, retry_policy.max_retries }),
         }
     }
     std.debug.print("\n", .{});
@@ -366,6 +368,7 @@ fn parseDirectory(allocator: std.mem.Allocator, dir_path: []const u8) !void {
                 .generator_decl => |gen| std.debug.print("      - generator {s}\n", .{gen.name}),
                 .template_string_decl => |template| std.debug.print("      - template_string {s}\n", .{template.name}),
                 .type_alias_decl => |alias| std.debug.print("      - type {s}\n", .{alias.name}),
+                .retry_policy_decl => |retry_policy| std.debug.print("      - retry_policy {s}\n", .{retry_policy.name}),
             }
         }
         std.debug.print("\n", .{});
@@ -398,6 +401,7 @@ fn parseMultipleFiles(allocator: std.mem.Allocator, file_paths: []const []const 
                 .generator_decl => |gen| std.debug.print("      - generator {s}\n", .{gen.name}),
                 .template_string_decl => |template| std.debug.print("      - template_string {s}\n", .{template.name}),
                 .type_alias_decl => |alias| std.debug.print("      - type {s}\n", .{alias.name}),
+                .retry_policy_decl => |retry_policy| std.debug.print("      - retry_policy {s}\n", .{retry_policy.name}),
             }
         }
         std.debug.print("\n", .{});

@@ -121,6 +121,7 @@ pub const MultiFileProject = struct {
                 .keyword_test => .{ .test_decl = try p.parseTestDecl() },
                 .keyword_generator => .{ .generator_decl = try p.parseGeneratorDecl() },
                 .keyword_template_string => .{ .template_string_decl = try p.parseTemplateStringDecl() },
+                .keyword_retry_policy => .{ .retry_policy_decl = try p.parseRetryPolicyDecl() },
                 else => {
                     return error.UnexpectedToken;
                 },

@@ -12,6 +12,8 @@ pub const ParseError = error{
     InvalidType,
     InvalidAttribute,
     OutOfMemory,
+    InvalidCharacter,
+    Overflow,
 };
 
 /// Parser for BAML source code
@@ -1203,6 +1205,116 @@ pub const Parser = struct {
         _ = try self.expect(.rbrace);
 
         return generator_decl;
+    }
+
+    /// Parse retry_policy declaration: retry_policy Name { max_retries N strategy { ... } }
+    pub fn parseRetryPolicyDecl(self: *Parser) ParseError!ast.RetryPolicyDecl {
+        self.skipTrivia();
+
+        const retry_policy_token = try self.expect(.keyword_retry_policy);
+        const location = ast.Location{
+            .line = retry_policy_token.line,
+            .column = retry_policy_token.column,
+        };
+
+        self.skipTrivia();
+        const name_token = try self.expect(.identifier);
+
+        // Parse body: { max_retries N ... }
+        self.skipTrivia();
+        _ = try self.expect(.lbrace);
+
+        var max_retries: u32 = 0;
+        var strategy: ?ast.RetryStrategy = null;
+
+        while (!self.check(.rbrace) and !self.isAtEnd()) {
+            self.skipTrivia();
+
+            if (self.check(.rbrace)) break;
+
+            // Parse field name
+            const field_token = try self.expect(.identifier);
+            const field_name = field_token.lexeme;
+
+            self.skipTrivia();
+
+            if (std.mem.eql(u8, field_name, "max_retries")) {
+                // Parse max_retries value (integer)
+                const value_token = try self.expect(.int_literal);
+                max_retries = try std.fmt.parseInt(u32, value_token.lexeme, 10);
+            } else if (std.mem.eql(u8, field_name, "strategy")) {
+                // Parse strategy block: { type ... delay_ms ... }
+                _ = try self.expect(.lbrace);
+
+                var strategy_type: ?[]const u8 = null;
+                var delay_ms: u32 = 200; // default
+                var multiplier: f64 = 1.5; // default for exponential_backoff
+                var max_delay_ms: u32 = 10000; // default for exponential_backoff
+
+                while (!self.check(.rbrace) and !self.isAtEnd()) {
+                    self.skipTrivia();
+                    if (self.check(.rbrace)) break;
+
+                    const strategy_field_token = try self.expect(.identifier);
+                    const strategy_field = strategy_field_token.lexeme;
+
+                    self.skipTrivia();
+
+                    if (std.mem.eql(u8, strategy_field, "type")) {
+                        const type_token = try self.expect(.identifier);
+                        strategy_type = type_token.lexeme;
+                    } else if (std.mem.eql(u8, strategy_field, "delay_ms")) {
+                        const delay_token = try self.expect(.int_literal);
+                        delay_ms = try std.fmt.parseInt(u32, delay_token.lexeme, 10);
+                    } else if (std.mem.eql(u8, strategy_field, "multiplier")) {
+                        const mult_token = self.advance() orelse return error.UnexpectedEof;
+                        if (mult_token.tag == .float_literal) {
+                            multiplier = try std.fmt.parseFloat(f64, mult_token.lexeme);
+                        } else if (mult_token.tag == .int_literal) {
+                            const int_val = try std.fmt.parseInt(u32, mult_token.lexeme, 10);
+                            multiplier = @floatFromInt(int_val);
+                        } else {
+                            return error.UnexpectedToken;
+                        }
+                    } else if (std.mem.eql(u8, strategy_field, "max_delay_ms")) {
+                        const max_delay_token = try self.expect(.int_literal);
+                        max_delay_ms = try std.fmt.parseInt(u32, max_delay_token.lexeme, 10);
+                    }
+
+                    self.skipTrivia();
+                }
+
+                self.skipTrivia();
+                _ = try self.expect(.rbrace);
+
+                // Build strategy based on type
+                if (strategy_type) |stype| {
+                    if (std.mem.eql(u8, stype, "constant_delay")) {
+                        strategy = ast.RetryStrategy{
+                            .constant_delay = ast.ConstantDelayStrategy{ .delay_ms = delay_ms },
+                        };
+                    } else if (std.mem.eql(u8, stype, "exponential_backoff")) {
+                        strategy = ast.RetryStrategy{
+                            .exponential_backoff = ast.ExponentialBackoffStrategy{
+                                .delay_ms = delay_ms,
+                                .multiplier = multiplier,
+                                .max_delay_ms = max_delay_ms,
+                            },
+                        };
+                    }
+                }
+            }
+
+            self.skipTrivia();
+        }
+
+        self.skipTrivia();
+        _ = try self.expect(.rbrace);
+
+        var retry_policy_decl = ast.RetryPolicyDecl.init(self.allocator, name_token.lexeme, max_retries, location);
+        retry_policy_decl.strategy = strategy;
+
+        return retry_policy_decl;
     }
 };
 

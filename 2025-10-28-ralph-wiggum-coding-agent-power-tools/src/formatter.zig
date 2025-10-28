@@ -47,6 +47,7 @@ pub const Formatter = struct {
             .generator_decl => |*d| try self.formatGeneratorDecl(d),
             .template_string_decl => |*d| try self.formatTemplateStringDecl(d),
             .type_alias_decl => |*d| try self.formatTypeAliasDecl(d),
+            .retry_policy_decl => |*d| try self.formatRetryPolicyDecl(d),
         }
     }
 
@@ -451,6 +452,53 @@ pub const Formatter = struct {
             try self.writer.writeAll(" ");
             try self.formatValue(entry.value_ptr);
             try self.writer.writeAll("\n");
+        }
+
+        self.indent_level -= 1;
+        try self.writer.writeAll("}");
+    }
+
+    /// Format a retry_policy declaration
+    fn formatRetryPolicyDecl(self: *Formatter, retry_policy_decl: *const ast.RetryPolicyDecl) !void {
+        try self.writer.writeAll("retry_policy ");
+        try self.writer.writeAll(retry_policy_decl.name);
+        try self.writer.writeAll(" {\n");
+
+        self.indent_level += 1;
+
+        // Format max_retries
+        try self.writeIndent();
+        try self.writer.writeAll("max_retries ");
+        try self.writer.print("{d}\n", .{retry_policy_decl.max_retries});
+
+        // Format strategy if present
+        if (retry_policy_decl.strategy) |strategy| {
+            try self.writeIndent();
+            try self.writer.writeAll("strategy {\n");
+            self.indent_level += 1;
+
+            switch (strategy) {
+                .constant_delay => |s| {
+                    try self.writeIndent();
+                    try self.writer.writeAll("type constant_delay\n");
+                    try self.writeIndent();
+                    try self.writer.print("delay_ms {d}\n", .{s.delay_ms});
+                },
+                .exponential_backoff => |s| {
+                    try self.writeIndent();
+                    try self.writer.writeAll("type exponential_backoff\n");
+                    try self.writeIndent();
+                    try self.writer.print("delay_ms {d}\n", .{s.delay_ms});
+                    try self.writeIndent();
+                    try self.writer.print("multiplier {d}\n", .{s.multiplier});
+                    try self.writeIndent();
+                    try self.writer.print("max_delay_ms {d}\n", .{s.max_delay_ms});
+                },
+            }
+
+            self.indent_level -= 1;
+            try self.writeIndent();
+            try self.writer.writeAll("}\n");
         }
 
         self.indent_level -= 1;
