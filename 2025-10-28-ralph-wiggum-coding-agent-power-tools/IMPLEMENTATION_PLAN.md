@@ -2,7 +2,7 @@
 
 A BAML language implementation in Zig.
 
-## Project Status: PHASE 1 - Lexer/Tokenizer
+## Project Status: PHASE 2 - AST & Parser Foundation
 
 ---
 
@@ -23,14 +23,14 @@ A BAML language implementation in Zig.
 
 ---
 
-### 🔵 PHASE 1: Lexer/Tokenizer (HIGHEST PRIORITY)
-**Status**: NOT STARTED
+### ✅ PHASE 1: Lexer/Tokenizer
+**Status**: ✅ COMPLETED
 **Goal**: Tokenize BAML source code into a stream of tokens
 
-#### Token Types Needed:
+#### Token Types Implemented:
 ```zig
 // Keywords
-class, enum, function, client, test, generator, template_string, type
+class, enum, function, client, test, generator, template_string, type, env
 
 // Primitive Types
 string, int, float, bool, null, image, audio, video, pdf, map
@@ -43,42 +43,50 @@ STRING_LITERAL, INT_LITERAL, FLOAT_LITERAL, BOOL_LITERAL
 IDENTIFIER, COMMENT, BLOCK_STRING
 
 // Special
-EOF, NEWLINE, WHITESPACE (maybe skip)
+EOF, NEWLINE
 ```
 
-#### Tasks:
-- [ ] 1.1: Define Token enum with all token types
-- [ ] 1.2: Create Lexer struct with source input and position tracking
-- [ ] 1.3: Implement keyword recognition
-- [ ] 1.4: Implement identifier and type name parsing
-- [ ] 1.5: Implement string literal parsing (quoted `"..."`)
-- [ ] 1.6: Implement block string parsing (`#"..."#` with nesting)
-- [ ] 1.7: Implement number literal parsing (int/float)
-- [ ] 1.8: Implement comment parsing (`//`, `///`, `{# #}`)
-- [ ] 1.9: Implement symbol/operator parsing
-- [ ] 1.10: Implement unquoted string parsing (for simple values)
-- [ ] 1.11: Add comprehensive lexer tests
-- [ ] 1.12: Create test BAML file and verify tokenization
+#### Tasks Completed:
+- [x] 1.1: Define Token enum with all token types
+- [x] 1.2: Create Lexer struct with source input and position tracking
+- [x] 1.3: Implement keyword recognition
+- [x] 1.4: Implement identifier and type name parsing
+- [x] 1.5: Implement string literal parsing (quoted `"..."`)
+- [x] 1.6: Implement block string parsing (`#"..."#` with nesting, including `##"..."##`)
+- [x] 1.7: Implement number literal parsing (int/float, including negative numbers)
+- [x] 1.8: Implement comment parsing (`//`, `///`, `{# #}` with nesting)
+- [x] 1.9: Implement symbol/operator parsing
+- [x] 1.10: Implement unquoted string parsing (for simple values)
+- [x] 1.11: Add comprehensive lexer tests (150+ tests covering all token types)
+- [x] 1.12: Create test BAML file and verify tokenization
 
-**Validation**: Lexer can tokenize a complete BAML file with all token types. Test file:
-```baml
-// Test comment
-class Person {
-  name string
-  age int?
-}
+**Validation**: ✅ PASSED - Lexer successfully tokenizes complete BAML files with all token types.
 
-enum Status {
-  Active
-  Inactive
-}
+**Implementation Details**:
+- Created `src/lexer.zig` (2,217 lines)
+- Comprehensive test suite with 150+ test cases
+- CLI tool (`minibaml`) to tokenize BAML files
+- Successfully tokenizes `test.baml` with 160 tokens including:
+  - Classes with attributes and complex types
+  - Enums with values
+  - Functions with block string prompts
+  - Client declarations with environment variables
+  - Test declarations with nested structures
+  - All comment types (line, docstring, block)
+  - Union types, optional types, array types, map types
+  - Block strings with multiple hash delimiters
 
-function Greet(p: Person) -> string {
-  client "openai/gpt-4"
-  prompt #"
-    Say hello to {{ p.name }}
-  "#
-}
+**Test Results**: All tests pass (`zig build test`)
+
+**Sample Output**:
+```
+$ ./zig-out/bin/_2025_10_28_ralph_wiggum_coding_ test.baml
+Tokenized test.baml: 160 tokens
+
+   0:              comment | Line   1, Col   1 | " Test comment"
+   4:        keyword_class | Line   3, Col   1 | "class"
+   5:           identifier | Line   3, Col   7 | "Person"
+   ...
 ```
 
 ---

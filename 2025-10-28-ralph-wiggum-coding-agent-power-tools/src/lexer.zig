@@ -601,12 +601,20 @@ pub const Lexer = struct {
 
         // Handle hash symbol
         if (char == '#') {
-            if (self.peekAt(1)) |next| {
-                if (next == '"') {
+            // Look ahead to see if this is a block string (#"..." or ##"..."## etc)
+            var look_ahead: usize = 1;
+            while (self.peekAt(look_ahead)) |next_char| {
+                if (next_char == '#') {
+                    look_ahead += 1;
+                } else if (next_char == '"') {
+                    // This is a block string
                     return self.scanBlockString();
+                } else {
+                    // Not a block string
+                    break;
                 }
             }
-            // Single hash symbol
+            // Single hash symbol (or hash not followed by quote)
             const start_index = self.index;
             _ = self.advance();
             const lexeme = self.source[start_index..self.index];
@@ -1883,4 +1891,334 @@ test "scanUnquotedString - dots and dashes" {
 
     try std.testing.expectEqual(TokenTag.string_literal, token.tag);
     try std.testing.expectEqualStrings("test-value.txt", token.lexeme);
+}
+
+// ============================================================================
+// COMPREHENSIVE INTEGRATION TESTS
+// ============================================================================
+
+test "tokenize - complete BAML class with attributes" {
+    const source =
+        \\/// A person entity
+        \\class Person {
+        \\  name string @alias("full_name")
+        \\  age int?
+        \\  status Status
+        \\  @@dynamic
+        \\}
+    ;
+    var lexer = Lexer.init(source);
+    var tokens = try lexer.tokenize(std.testing.allocator);
+    defer tokens.deinit(std.testing.allocator);
+
+    // Verify we have tokens (at minimum: docstring, class, identifier, lbrace,
+    // multiple fields, double_at, identifier, rbrace, eof)
+    try std.testing.expect(tokens.items.len > 20);
+
+    // Verify first few tokens
+    try std.testing.expectEqual(TokenTag.docstring, tokens.items[0].tag);
+    try std.testing.expectEqual(TokenTag.keyword_class, tokens.items[1].tag);
+    try std.testing.expectEqual(TokenTag.identifier, tokens.items[2].tag);
+    try std.testing.expectEqualStrings("Person", tokens.items[2].lexeme);
+}
+
+test "tokenize - enum with attributes" {
+    const source =
+        \\enum Status {
+        \\  Active @alias("currently_active")
+        \\  Inactive
+        \\}
+    ;
+    var lexer = Lexer.init(source);
+    var tokens = try lexer.tokenize(std.testing.allocator);
+    defer tokens.deinit(std.testing.allocator);
+
+    try std.testing.expect(tokens.items.len > 10);
+    try std.testing.expectEqual(TokenTag.keyword_enum, tokens.items[0].tag);
+    try std.testing.expectEqual(TokenTag.identifier, tokens.items[1].tag);
+    try std.testing.expectEqualStrings("Status", tokens.items[1].lexeme);
+}
+
+test "tokenize - function with block string prompt" {
+    const source =
+        \\function Greet(p: Person) -> string {
+        \\  client "openai/gpt-4"
+        \\  prompt #"Hello {{ p.name }}"#
+        \\}
+    ;
+    var lexer = Lexer.init(source);
+    var tokens = try lexer.tokenize(std.testing.allocator);
+    defer tokens.deinit(std.testing.allocator);
+
+    try std.testing.expect(tokens.items.len > 15);
+    try std.testing.expectEqual(TokenTag.keyword_function, tokens.items[0].tag);
+    try std.testing.expectEqual(TokenTag.identifier, tokens.items[1].tag);
+    try std.testing.expectEqualStrings("Greet", tokens.items[1].lexeme);
+}
+
+test "tokenize - client declaration with env variable" {
+    const source =
+        \\client<llm> MyClient {
+        \\  provider "openai"
+        \\  options {
+        \\    api_key env.OPENAI_API_KEY
+        \\  }
+        \\}
+    ;
+    var lexer = Lexer.init(source);
+    var tokens = try lexer.tokenize(std.testing.allocator);
+    defer tokens.deinit(std.testing.allocator);
+
+    try std.testing.expect(tokens.items.len > 15);
+    try std.testing.expectEqual(TokenTag.keyword_client, tokens.items[0].tag);
+
+    // Find env token
+    var found_env = false;
+    for (tokens.items) |token| {
+        if (token.tag == .env) {
+            found_env = true;
+            break;
+        }
+    }
+    try std.testing.expect(found_env);
+}
+
+test "tokenize - test declaration" {
+    const source =
+        \\test MyTest {
+        \\  functions [Greet]
+        \\  args {
+        \\    p { name "Alice" }
+        \\  }
+        \\}
+    ;
+    var lexer = Lexer.init(source);
+    var tokens = try lexer.tokenize(std.testing.allocator);
+    defer tokens.deinit(std.testing.allocator);
+
+    try std.testing.expect(tokens.items.len > 15);
+    try std.testing.expectEqual(TokenTag.keyword_test, tokens.items[0].tag);
+}
+
+test "tokenize - union types with pipe" {
+    const source = "result: string | int | null";
+    var lexer = Lexer.init(source);
+    var tokens = try lexer.tokenize(std.testing.allocator);
+    defer tokens.deinit(std.testing.allocator);
+
+    const expected_tags = [_]TokenTag{
+        .identifier,
+        .colon,
+        .type_string,
+        .pipe,
+        .type_int,
+        .pipe,
+        .type_null,
+        .eof,
+    };
+
+    try std.testing.expectEqual(expected_tags.len, tokens.items.len);
+    for (expected_tags, 0..) |tag, i| {
+        try std.testing.expectEqual(tag, tokens.items[i].tag);
+    }
+}
+
+test "tokenize - all primitive types" {
+    const source = "string int float bool null image audio video pdf map";
+    var lexer = Lexer.init(source);
+    var tokens = try lexer.tokenize(std.testing.allocator);
+    defer tokens.deinit(std.testing.allocator);
+
+    const expected_tags = [_]TokenTag{
+        .type_string,
+        .type_int,
+        .type_float,
+        .type_bool,
+        .type_null,
+        .type_image,
+        .type_audio,
+        .type_video,
+        .type_pdf,
+        .type_map,
+        .eof,
+    };
+
+    try std.testing.expectEqual(expected_tags.len, tokens.items.len);
+    for (expected_tags, 0..) |tag, i| {
+        try std.testing.expectEqual(tag, tokens.items[i].tag);
+    }
+}
+
+test "tokenize - all keywords" {
+    const source = "class enum function client test generator template_string type";
+    var lexer = Lexer.init(source);
+    var tokens = try lexer.tokenize(std.testing.allocator);
+    defer tokens.deinit(std.testing.allocator);
+
+    const expected_tags = [_]TokenTag{
+        .keyword_class,
+        .keyword_enum,
+        .keyword_function,
+        .keyword_client,
+        .keyword_test,
+        .keyword_generator,
+        .keyword_template_string,
+        .keyword_type,
+        .eof,
+    };
+
+    try std.testing.expectEqual(expected_tags.len, tokens.items.len);
+    for (expected_tags, 0..) |tag, i| {
+        try std.testing.expectEqual(tag, tokens.items[i].tag);
+    }
+}
+
+test "tokenize - nested block comment" {
+    const source = "{# outer {# inner #} outer #} after";
+    var lexer = Lexer.init(source);
+    var tokens = try lexer.tokenize(std.testing.allocator);
+    defer tokens.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 3), tokens.items.len);
+    try std.testing.expectEqual(TokenTag.block_comment, tokens.items[0].tag);
+    try std.testing.expectEqualStrings(" outer {# inner #} outer ", tokens.items[0].lexeme);
+    try std.testing.expectEqual(TokenTag.identifier, tokens.items[1].tag);
+    try std.testing.expectEqualStrings("after", tokens.items[1].lexeme);
+}
+
+test "tokenize - mixed comments and code" {
+    const source =
+        \\// line comment
+        \\/// docstring
+        \\class Foo {
+        \\  {# block comment #}
+        \\  name string
+        \\}
+    ;
+    var lexer = Lexer.init(source);
+    var tokens = try lexer.tokenize(std.testing.allocator);
+    defer tokens.deinit(std.testing.allocator);
+
+    // Should have: comment, newline, docstring, newline, class, identifier, lbrace, newline,
+    // block_comment, newline, identifier, type, newline, rbrace, eof
+    try std.testing.expect(tokens.items.len >= 15);
+
+    var has_comment = false;
+    var has_docstring = false;
+    var has_block_comment = false;
+
+    for (tokens.items) |token| {
+        if (token.tag == .comment) has_comment = true;
+        if (token.tag == .docstring) has_docstring = true;
+        if (token.tag == .block_comment) has_block_comment = true;
+    }
+
+    try std.testing.expect(has_comment);
+    try std.testing.expect(has_docstring);
+    try std.testing.expect(has_block_comment);
+}
+
+test "tokenize - complex nested structures" {
+    const source = "data: map<string, Person[]>?";
+    var lexer = Lexer.init(source);
+    var tokens = try lexer.tokenize(std.testing.allocator);
+    defer tokens.deinit(std.testing.allocator);
+
+    const expected_tags = [_]TokenTag{
+        .identifier,
+        .colon,
+        .type_map,
+        .less_than,
+        .type_string,
+        .comma,
+        .identifier,
+        .lbracket,
+        .rbracket,
+        .greater_than,
+        .question,
+        .eof,
+    };
+
+    try std.testing.expectEqual(expected_tags.len, tokens.items.len);
+    for (expected_tags, 0..) |tag, i| {
+        try std.testing.expectEqual(tag, tokens.items[i].tag);
+    }
+}
+
+test "tokenize - attribute with arguments" {
+    const source = "@alias(\"full_name\") @description(\"The person's name\")";
+    var lexer = Lexer.init(source);
+    var tokens = try lexer.tokenize(std.testing.allocator);
+    defer tokens.deinit(std.testing.allocator);
+
+    // Should tokenize: @, identifier, (, string, ), @, identifier, (, string, ), eof
+    try std.testing.expect(tokens.items.len >= 10);
+    try std.testing.expectEqual(TokenTag.at, tokens.items[0].tag);
+    try std.testing.expectEqual(TokenTag.identifier, tokens.items[1].tag);
+    try std.testing.expectEqualStrings("alias", tokens.items[1].lexeme);
+}
+
+test "scanString - preserves lexeme correctly" {
+    const source = "\"test string\"";
+    var lexer = Lexer.init(source);
+    const token = lexer.scanToken();
+
+    try std.testing.expectEqual(TokenTag.string_literal, token.tag);
+    try std.testing.expectEqualStrings("test string", token.lexeme);
+}
+
+test "complete BAML file tokenization" {
+    const source =
+        \\// Test file
+        \\class Person {
+        \\  name string
+        \\  age int?
+        \\}
+        \\
+        \\enum Status {
+        \\  Active
+        \\  Inactive
+        \\}
+        \\
+        \\function Greet(p: Person) -> string {
+        \\  client "openai/gpt-4"
+        \\  prompt #"
+        \\    Say hello to {{ p.name }}
+        \\  "#
+        \\}
+    ;
+
+    var lexer = Lexer.init(source);
+    var tokens = try lexer.tokenize(std.testing.allocator);
+    defer tokens.deinit(std.testing.allocator);
+
+    // Verify tokenization completes without errors
+    try std.testing.expect(tokens.items.len > 40);
+
+    // Verify we have all major token types
+    var has_class = false;
+    var has_enum = false;
+    var has_function = false;
+    var has_comment = false;
+    var has_string = false;
+
+    for (tokens.items) |token| {
+        switch (token.tag) {
+            .keyword_class => has_class = true,
+            .keyword_enum => has_enum = true,
+            .keyword_function => has_function = true,
+            .comment => has_comment = true,
+            .string_literal => has_string = true,
+            else => {},
+        }
+    }
+
+    try std.testing.expect(has_class);
+    try std.testing.expect(has_enum);
+    try std.testing.expect(has_function);
+    try std.testing.expect(has_comment);
+    try std.testing.expect(has_string);
+
+    // Verify EOF is last token
+    try std.testing.expectEqual(TokenTag.eof, tokens.items[tokens.items.len - 1].tag);
 }
