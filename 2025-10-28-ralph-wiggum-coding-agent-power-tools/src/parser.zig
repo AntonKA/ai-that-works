@@ -899,6 +899,152 @@ pub const Parser = struct {
             .location = location,
         };
     }
+
+    /// Parse client declaration: client<llm> Name { provider "..." options { ... } }
+    pub fn parseClientDecl(self: *Parser) ParseError!ast.ClientDecl {
+        self.skipTrivia();
+
+        const client_token = try self.expect(.keyword_client);
+        const location = ast.Location{
+            .line = client_token.line,
+            .column = client_token.column,
+        };
+
+        // Parse <type> (e.g., <llm>)
+        self.skipTrivia();
+        _ = try self.expect(.less_than);
+        self.skipTrivia();
+
+        const type_token = try self.expect(.identifier);
+        const client_type = type_token.lexeme;
+
+        self.skipTrivia();
+        _ = try self.expect(.greater_than);
+
+        // Parse client name
+        self.skipTrivia();
+        const name_token = try self.expect(.identifier);
+
+        var client_decl = ast.ClientDecl.init(self.allocator, name_token.lexeme, client_type, location);
+        errdefer client_decl.deinit(self.allocator);
+
+        // Parse client body: { provider "..." options { ... } }
+        self.skipTrivia();
+        _ = try self.expect(.lbrace);
+
+        while (!self.check(.rbrace) and !self.isAtEnd()) {
+            self.skipTrivia();
+
+            if (self.check(.rbrace)) break;
+
+            // Check for 'provider' keyword
+            if (self.match(.identifier)) |field_token| {
+                if (std.mem.eql(u8, field_token.lexeme, "provider")) {
+                    self.skipTrivia();
+                    const provider_token = try self.expect(.string_literal);
+                    client_decl.provider = provider_token.lexeme;
+                    continue;
+                } else if (std.mem.eql(u8, field_token.lexeme, "options")) {
+                    // Parse options block: options { key value, ... }
+                    self.skipTrivia();
+                    _ = try self.expect(.lbrace);
+
+                    while (!self.check(.rbrace) and !self.isAtEnd()) {
+                        self.skipTrivia();
+
+                        if (self.check(.rbrace)) break;
+
+                        // Parse key
+                        const key_token = try self.expect(.identifier);
+                        const key = key_token.lexeme;
+
+                        self.skipTrivia();
+
+                        // Parse value (can be string, number, env var, object, etc.)
+                        const value = try self.parseValue();
+                        try client_decl.options.put(key, value);
+
+                        self.skipTrivia();
+                    }
+
+                    self.skipTrivia();
+                    _ = try self.expect(.rbrace);
+                    continue;
+                } else {
+                    // Unknown field in client body
+                    try self.addError("Unknown field in client declaration: {s}", .{field_token.lexeme}, field_token.line, field_token.column);
+                    return ParseError.UnexpectedToken;
+                }
+            }
+
+            const current = self.peek() orelse {
+                try self.addError("Expected 'provider' or 'options' in client body", .{}, 0, 0);
+                return ParseError.UnexpectedEof;
+            };
+            try self.addError("Expected 'provider' or 'options' in client body, got {s}", .{@tagName(current.tag)}, current.line, current.column);
+            return ParseError.UnexpectedToken;
+        }
+
+        self.skipTrivia();
+        _ = try self.expect(.rbrace);
+
+        return client_decl;
+    }
+
+    /// Parse template_string declaration: template_string Name(params) #"..."#
+    pub fn parseTemplateStringDecl(self: *Parser) ParseError!ast.TemplateStringDecl {
+        self.skipTrivia();
+
+        const template_token = try self.expect(.keyword_template_string);
+        const location = ast.Location{
+            .line = template_token.line,
+            .column = template_token.column,
+        };
+
+        self.skipTrivia();
+        const name_token = try self.expect(.identifier);
+
+        var template_decl = ast.TemplateStringDecl.init(self.allocator, name_token.lexeme, location);
+        errdefer template_decl.deinit(self.allocator);
+
+        // Parse parameters: (param1: Type, param2: Type)
+        self.skipTrivia();
+        _ = try self.expect(.lparen);
+
+        // Parse parameter list
+        while (!self.check(.rparen) and !self.isAtEnd()) {
+            self.skipTrivia();
+
+            if (self.check(.rparen)) break;
+
+            const param = try self.parseParameter();
+            try template_decl.parameters.append(param);
+
+            self.skipTrivia();
+            if (self.match(.comma)) |_| {
+                continue;
+            } else if (self.check(.rparen)) {
+                break;
+            } else {
+                const current = self.peek() orelse {
+                    try self.addError("Expected ',' or ')' in parameter list", .{}, 0, 0);
+                    return ParseError.UnexpectedEof;
+                };
+                try self.addError("Expected ',' or ')' in parameter list", .{}, current.line, current.column);
+                return ParseError.UnexpectedToken;
+            }
+        }
+
+        self.skipTrivia();
+        _ = try self.expect(.rparen);
+
+        // Parse template body (block string)
+        self.skipTrivia();
+        const template_token_body = try self.expect(.string_literal);
+        template_decl.template = template_token_body.lexeme;
+
+        return template_decl;
+    }
 };
 
 /// Parser error information
@@ -1974,4 +2120,359 @@ test "Parser: Integration - Parse complete function from test.baml" {
     try std.testing.expect(func_decl.return_type.primitive == .string);
     try std.testing.expectEqualStrings("openai/gpt-4", func_decl.client.?);
     try std.testing.expect(std.mem.indexOf(u8, func_decl.prompt.?, "Say hello to") != null);
+}
+
+test "Parser: Parse simple client declaration" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\client<llm> MyClient {
+        \\  provider "openai"
+        \\  options {
+        \\    model "gpt-4"
+        \\  }
+        \\}
+    ;
+
+    var lex = Lexer.init(allocator, source);
+    defer lex.deinit();
+
+    const tokens = try lex.tokenize();
+    defer allocator.free(tokens);
+
+    var parser = Parser.init(allocator, tokens);
+    defer parser.deinit();
+
+    var client_decl = try parser.parseClientDecl();
+    defer client_decl.deinit(allocator);
+
+    try std.testing.expectEqualStrings("MyClient", client_decl.name);
+    try std.testing.expectEqualStrings("llm", client_decl.client_type);
+    try std.testing.expectEqualStrings("openai", client_decl.provider);
+    try std.testing.expect(client_decl.options.count() == 1);
+
+    const model = client_decl.options.get("model").?;
+    try std.testing.expect(model == .string);
+    try std.testing.expectEqualStrings("gpt-4", model.string);
+}
+
+test "Parser: Parse client with environment variable" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\client<llm> MyClient {
+        \\  provider "openai"
+        \\  options {
+        \\    api_key env.OPENAI_API_KEY
+        \\    model "gpt-4"
+        \\  }
+        \\}
+    ;
+
+    var lex = Lexer.init(allocator, source);
+    defer lex.deinit();
+
+    const tokens = try lex.tokenize();
+    defer allocator.free(tokens);
+
+    var parser = Parser.init(allocator, tokens);
+    defer parser.deinit();
+
+    var client_decl = try parser.parseClientDecl();
+    defer client_decl.deinit(allocator);
+
+    try std.testing.expectEqualStrings("MyClient", client_decl.name);
+    try std.testing.expectEqualStrings("openai", client_decl.provider);
+    try std.testing.expect(client_decl.options.count() == 2);
+
+    const api_key = client_decl.options.get("api_key").?;
+    try std.testing.expect(api_key == .env_var);
+    try std.testing.expectEqualStrings("OPENAI_API_KEY", api_key.env_var);
+
+    const model = client_decl.options.get("model").?;
+    try std.testing.expect(model == .string);
+    try std.testing.expectEqualStrings("gpt-4", model.string);
+}
+
+test "Parser: Parse client with multiple options" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\client<llm> MyClient {
+        \\  provider "openai"
+        \\  options {
+        \\    model "gpt-4"
+        \\    api_key env.OPENAI_API_KEY
+        \\    temperature 0.7
+        \\    base_url "https://api.openai.com/v1"
+        \\  }
+        \\}
+    ;
+
+    var lex = Lexer.init(allocator, source);
+    defer lex.deinit();
+
+    const tokens = try lex.tokenize();
+    defer allocator.free(tokens);
+
+    var parser = Parser.init(allocator, tokens);
+    defer parser.deinit();
+
+    var client_decl = try parser.parseClientDecl();
+    defer client_decl.deinit(allocator);
+
+    try std.testing.expectEqualStrings("MyClient", client_decl.name);
+    try std.testing.expectEqualStrings("llm", client_decl.client_type);
+    try std.testing.expectEqualStrings("openai", client_decl.provider);
+    try std.testing.expect(client_decl.options.count() == 4);
+
+    const model = client_decl.options.get("model").?;
+    try std.testing.expectEqualStrings("gpt-4", model.string);
+
+    const api_key = client_decl.options.get("api_key").?;
+    try std.testing.expectEqualStrings("OPENAI_API_KEY", api_key.env_var);
+
+    const temperature = client_decl.options.get("temperature").?;
+    try std.testing.expect(temperature == .float);
+    try std.testing.expect(temperature.float == 0.7);
+
+    const base_url = client_decl.options.get("base_url").?;
+    try std.testing.expectEqualStrings("https://api.openai.com/v1", base_url.string);
+}
+
+test "Parser: Parse client with nested options object" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\client<llm> MyClient {
+        \\  provider "openai"
+        \\  options {
+        \\    model "gpt-4"
+        \\    headers {
+        \\      Authorization "Bearer token"
+        \\    }
+        \\  }
+        \\}
+    ;
+
+    var lex = Lexer.init(allocator, source);
+    defer lex.deinit();
+
+    const tokens = try lex.tokenize();
+    defer allocator.free(tokens);
+
+    var parser = Parser.init(allocator, tokens);
+    defer parser.deinit();
+
+    var client_decl = try parser.parseClientDecl();
+    defer client_decl.deinit(allocator);
+
+    try std.testing.expectEqualStrings("MyClient", client_decl.name);
+    try std.testing.expect(client_decl.options.count() == 2);
+
+    const headers = client_decl.options.get("headers").?;
+    try std.testing.expect(headers == .object);
+    try std.testing.expect(headers.object.count() == 1);
+
+    const auth = headers.object.get("Authorization").?;
+    try std.testing.expectEqualStrings("Bearer token", auth.string);
+}
+
+test "Parser: Parse simple template_string without parameters" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\template_string SimpleTemplate() #"
+        \\  This is a simple template
+        \\"#
+    ;
+
+    var lex = Lexer.init(allocator, source);
+    defer lex.deinit();
+
+    const tokens = try lex.tokenize();
+    defer allocator.free(tokens);
+
+    var parser = Parser.init(allocator, tokens);
+    defer parser.deinit();
+
+    var template_decl = try parser.parseTemplateStringDecl();
+    defer template_decl.deinit(allocator);
+
+    try std.testing.expectEqualStrings("SimpleTemplate", template_decl.name);
+    try std.testing.expect(template_decl.parameters.items.len == 0);
+    try std.testing.expect(std.mem.indexOf(u8, template_decl.template, "This is a simple template") != null);
+}
+
+test "Parser: Parse template_string with single parameter" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\template_string Greeting(name: string) #"
+        \\  Hello {{ name }}!
+        \\"#
+    ;
+
+    var lex = Lexer.init(allocator, source);
+    defer lex.deinit();
+
+    const tokens = try lex.tokenize();
+    defer allocator.free(tokens);
+
+    var parser = Parser.init(allocator, tokens);
+    defer parser.deinit();
+
+    var template_decl = try parser.parseTemplateStringDecl();
+    defer template_decl.deinit(allocator);
+
+    try std.testing.expectEqualStrings("Greeting", template_decl.name);
+    try std.testing.expect(template_decl.parameters.items.len == 1);
+
+    const param = template_decl.parameters.items[0];
+    try std.testing.expectEqualStrings("name", param.name);
+    try std.testing.expect(param.type_expr.* == .primitive);
+    try std.testing.expect(param.type_expr.primitive == .string);
+
+    try std.testing.expect(std.mem.indexOf(u8, template_decl.template, "Hello {{ name }}!") != null);
+}
+
+test "Parser: Parse template_string with multiple parameters" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\template_string FormatMessages(msgs: Message[], role: string) #"
+        \\  {% for m in msgs %}
+        \\    {{ _.role(role) }}
+        \\    {{ m.content }}
+        \\  {% endfor %}
+        \\"#
+    ;
+
+    var lex = Lexer.init(allocator, source);
+    defer lex.deinit();
+
+    const tokens = try lex.tokenize();
+    defer allocator.free(tokens);
+
+    var parser = Parser.init(allocator, tokens);
+    defer parser.deinit();
+
+    var template_decl = try parser.parseTemplateStringDecl();
+    defer template_decl.deinit(allocator);
+
+    try std.testing.expectEqualStrings("FormatMessages", template_decl.name);
+    try std.testing.expect(template_decl.parameters.items.len == 2);
+
+    // Check first parameter: msgs: Message[]
+    const param1 = template_decl.parameters.items[0];
+    try std.testing.expectEqualStrings("msgs", param1.name);
+    try std.testing.expect(param1.type_expr.* == .array);
+    try std.testing.expect(param1.type_expr.array.* == .named);
+    try std.testing.expectEqualStrings("Message", param1.type_expr.array.named);
+
+    // Check second parameter: role: string
+    const param2 = template_decl.parameters.items[1];
+    try std.testing.expectEqualStrings("role", param2.name);
+    try std.testing.expect(param2.type_expr.* == .primitive);
+    try std.testing.expect(param2.type_expr.primitive == .string);
+
+    // Check template contains expected content
+    try std.testing.expect(std.mem.indexOf(u8, template_decl.template, "for m in msgs") != null);
+    try std.testing.expect(std.mem.indexOf(u8, template_decl.template, "_.role(role)") != null);
+}
+
+test "Parser: Parse template_string with complex types" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\template_string ProcessData(data: map<string, int[]>?) #"
+        \\  Processing data: {{ data }}
+        \\"#
+    ;
+
+    var lex = Lexer.init(allocator, source);
+    defer lex.deinit();
+
+    const tokens = try lex.tokenize();
+    defer allocator.free(tokens);
+
+    var parser = Parser.init(allocator, tokens);
+    defer parser.deinit();
+
+    var template_decl = try parser.parseTemplateStringDecl();
+    defer template_decl.deinit(allocator);
+
+    try std.testing.expectEqualStrings("ProcessData", template_decl.name);
+    try std.testing.expect(template_decl.parameters.items.len == 1);
+
+    const param = template_decl.parameters.items[0];
+    try std.testing.expectEqualStrings("data", param.name);
+
+    // Type should be: optional(map<string, array(int)>)
+    try std.testing.expect(param.type_expr.* == .optional);
+    try std.testing.expect(param.type_expr.optional.* == .map);
+}
+
+test "Parser: Integration - Parse complete client from validation example" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\client<llm> MyClient {
+        \\  provider "openai"
+        \\  options {
+        \\    model "gpt-4"
+        \\    api_key env.OPENAI_API_KEY
+        \\    temperature 0.7
+        \\    base_url "https://api.openai.com/v1"
+        \\  }
+        \\}
+    ;
+
+    var lex = Lexer.init(allocator, source);
+    defer lex.deinit();
+
+    const tokens = try lex.tokenize();
+    defer allocator.free(tokens);
+
+    var parser = Parser.init(allocator, tokens);
+    defer parser.deinit();
+
+    var client_decl = try parser.parseClientDecl();
+    defer client_decl.deinit(allocator);
+
+    try std.testing.expectEqualStrings("MyClient", client_decl.name);
+    try std.testing.expectEqualStrings("llm", client_decl.client_type);
+    try std.testing.expectEqualStrings("openai", client_decl.provider);
+    try std.testing.expect(client_decl.options.count() == 4);
+}
+
+test "Parser: Integration - Parse complete template_string from validation example" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\template_string FormatMessages(msgs: Message[]) #"
+        \\  {% for m in msgs %}
+        \\    {{ _.role(m.role) }}
+        \\    {{ m.content }}
+        \\  {% endfor %}
+        \\"#
+    ;
+
+    var lex = Lexer.init(allocator, source);
+    defer lex.deinit();
+
+    const tokens = try lex.tokenize();
+    defer allocator.free(tokens);
+
+    var parser = Parser.init(allocator, tokens);
+    defer parser.deinit();
+
+    var template_decl = try parser.parseTemplateStringDecl();
+    defer template_decl.deinit(allocator);
+
+    try std.testing.expectEqualStrings("FormatMessages", template_decl.name);
+    try std.testing.expect(template_decl.parameters.items.len == 1);
+    try std.testing.expectEqualStrings("msgs", template_decl.parameters.items[0].name);
+    try std.testing.expect(std.mem.indexOf(u8, template_decl.template, "for m in msgs") != null);
+    try std.testing.expect(std.mem.indexOf(u8, template_decl.template, "_.role(m.role)") != null);
 }

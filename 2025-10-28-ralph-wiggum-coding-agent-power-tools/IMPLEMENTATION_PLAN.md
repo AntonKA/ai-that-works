@@ -2,7 +2,7 @@
 
 A BAML language implementation in Zig.
 
-## Project Status: PHASE 5 - Client & Template String Parsing
+## Project Status: PHASE 6 - Test & Generator Parsing
 
 ---
 
@@ -258,22 +258,47 @@ function ExtractPerson(text: string, image: image) -> Person {
 
 ---
 
-### 🔵 PHASE 5: Client & Template String Parsing
-**Status**: NOT STARTED
+### ✅ PHASE 5: Client & Template String Parsing
+**Status**: ✅ COMPLETED
 **Goal**: Parse client and template_string declarations
 
-#### Tasks:
-- [ ] 5.1: Parse client<llm> declaration header
-- [ ] 5.2: Parse client provider
-- [ ] 5.3: Parse client options block
-- [ ] 5.4: Parse nested options (headers, etc.)
-- [ ] 5.5: Parse environment variable references (env.VAR_NAME)
-- [ ] 5.6: Parse template_string declarations
-- [ ] 5.7: Parse template_string parameters
-- [ ] 5.8: Add client parsing tests
-- [ ] 5.9: Add template_string parsing tests
+#### Tasks Completed:
+- [x] 5.1: Parse client<llm> declaration header
+- [x] 5.2: Parse client provider
+- [x] 5.3: Parse client options block
+- [x] 5.4: Parse nested options (headers, etc.)
+- [x] 5.5: Parse environment variable references (env.VAR_NAME)
+- [x] 5.6: Parse template_string declarations
+- [x] 5.7: Parse template_string parameters
+- [x] 5.8: Add client parsing tests
+- [x] 5.9: Add template_string parsing tests
 
-**Validation**: Successfully parse:
+**Validation**: ✅ PASSED - Successfully parses all client and template_string features.
+
+**Implementation Details**:
+- Added `parseClientDecl()` function to parse complete client declarations
+  - Parses client type parameter: `client<llm>`
+  - Parses provider field: `provider "openai"`
+  - Parses options block with key-value pairs
+  - Supports environment variables via existing `parseValue()` function
+  - Supports nested objects and all value types
+- Added `parseTemplateStringDecl()` function to parse template_string declarations
+  - Parses parameters using existing `parseParameter()` function
+  - Parses template body as block string
+  - Supports all parameter types (primitives, arrays, maps, etc.)
+- Comprehensive test suite with 10 new test cases covering:
+  - Simple client declarations
+  - Clients with environment variables
+  - Clients with multiple options
+  - Clients with nested options objects
+  - Template strings without parameters
+  - Template strings with single parameter
+  - Template strings with multiple parameters
+  - Template strings with complex types
+  - Integration tests matching validation examples
+- All tests pass (`zig build test`)
+
+**Sample Successfully Parsed**:
 ```baml
 client<llm> MyClient {
   provider "openai"
@@ -292,6 +317,8 @@ template_string FormatMessages(msgs: Message[]) #"
   {% endfor %}
 "#
 ```
+
+**Test Results**: ✅ All tests pass - Build Summary: 5/5 steps succeeded; 2/2 tests passed
 
 ---
 
