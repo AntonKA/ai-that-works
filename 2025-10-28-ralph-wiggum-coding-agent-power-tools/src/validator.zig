@@ -168,12 +168,41 @@ pub const RetryPolicyRegistry = struct {
     }
 };
 
+/// Client registry for tracking all declared clients
+pub const ClientRegistry = struct {
+    clients: std.StringHashMap(ast.Location),
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator) ClientRegistry {
+        return ClientRegistry{
+            .clients = std.StringHashMap(ast.Location).init(allocator),
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *ClientRegistry) void {
+        self.clients.deinit();
+    }
+
+    pub fn registerClient(self: *ClientRegistry, name: []const u8, location: ast.Location) !void {
+        if (self.clients.contains(name)) {
+            return ValidationError.DuplicateDefinition;
+        }
+        try self.clients.put(name, location);
+    }
+
+    pub fn isDefined(self: *const ClientRegistry, name: []const u8) bool {
+        return self.clients.contains(name);
+    }
+};
+
 /// Validator for BAML AST
 pub const Validator = struct {
     allocator: std.mem.Allocator,
     type_registry: TypeRegistry,
     function_registry: FunctionRegistry,
     retry_policy_registry: RetryPolicyRegistry,
+    client_registry: ClientRegistry,
     diagnostics: std.ArrayList(Diagnostic),
 
     pub fn init(allocator: std.mem.Allocator) Validator {
@@ -182,6 +211,7 @@ pub const Validator = struct {
             .type_registry = TypeRegistry.init(allocator),
             .function_registry = FunctionRegistry.init(allocator),
             .retry_policy_registry = RetryPolicyRegistry.init(allocator),
+            .client_registry = ClientRegistry.init(allocator),
             .diagnostics = std.ArrayList(Diagnostic){},
         };
     }
@@ -194,6 +224,7 @@ pub const Validator = struct {
         self.type_registry.deinit();
         self.function_registry.deinit();
         self.retry_policy_registry.deinit();
+        self.client_registry.deinit();
     }
 
     /// Validate an entire AST
@@ -254,6 +285,15 @@ pub const Validator = struct {
                         }
                     };
                 },
+                .client_decl => |client| {
+                    self.client_registry.registerClient(client.name, client.location) catch |err| {
+                        if (err == ValidationError.DuplicateDefinition) {
+                            try self.addError("Duplicate client definition: {s}", .{client.name}, client.location);
+                        } else {
+                            return err;
+                        }
+                    };
+                },
                 else => {},
             }
         }
@@ -297,6 +337,13 @@ pub const Validator = struct {
                             try self.addError("Undefined retry_policy in client: {s}", .{policy_name}, client.location);
                         }
                     }
+
+                    // Validate strategy lists in fallback/round_robin clients
+                    if (std.mem.eql(u8, client.provider, "fallback") or std.mem.eql(u8, client.provider, "round_robin")) {
+                        if (client.options.get("strategy")) |strategy_value| {
+                            try self.validateStrategyList(strategy_value, client.location);
+                        }
+                    }
                 },
                 else => {},
             }
@@ -331,6 +378,30 @@ pub const Validator = struct {
             },
             .literal => {
                 // Literal types are always valid
+            },
+        }
+    }
+
+    /// Validate a strategy list in fallback/round_robin clients
+    fn validateStrategyList(self: *Validator, strategy_value: ast.Value, location: ast.Location) ValidationError!void {
+        switch (strategy_value) {
+            .array => |arr| {
+                // Validate each client name in the strategy list
+                for (arr.items) |item| {
+                    switch (item) {
+                        .string => |client_name| {
+                            if (!self.client_registry.isDefined(client_name)) {
+                                try self.addError("Undefined client in strategy list: {s}", .{client_name}, location);
+                            }
+                        },
+                        else => {
+                            try self.addError("Strategy list must contain client names (strings), found {s}", .{@tagName(item)}, location);
+                        },
+                    }
+                }
+            },
+            else => {
+                try self.addError("Strategy field must be an array of client names", .{}, location);
             },
         }
     }
@@ -1563,6 +1634,242 @@ test "Validator: Undefined retry_policy in client" {
     var found_error = false;
     for (diagnostics) |diag| {
         if (std.mem.indexOf(u8, diag.message, "Undefined retry_policy") != null) {
+            found_error = true;
+            break;
+        }
+    }
+    try std.testing.expect(found_error);
+}
+
+test "Validator: ClientRegistry" {
+    const allocator = std.testing.allocator;
+    var registry = ClientRegistry.init(allocator);
+    defer registry.deinit();
+
+    try registry.registerClient("MyClient", .{ .line = 1, .column = 1 });
+    try std.testing.expect(registry.isDefined("MyClient"));
+    try std.testing.expect(!registry.isDefined("OtherClient"));
+}
+
+test "Validator: Detect duplicate client" {
+    const allocator = std.testing.allocator;
+    var registry = ClientRegistry.init(allocator);
+    defer registry.deinit();
+
+    try registry.registerClient("MyClient", .{ .line = 1, .column = 1 });
+    const result = registry.registerClient("MyClient", .{ .line = 10, .column = 1 });
+    try std.testing.expectError(ValidationError.DuplicateDefinition, result);
+}
+
+test "Validator: Valid fallback client with strategy list" {
+    const allocator = std.testing.allocator;
+    var validator = Validator.init(allocator);
+    defer validator.deinit();
+
+    var tree = ast.Ast.init(allocator);
+    defer tree.deinit();
+
+    // Create ClientA
+    const client_a = ast.ClientDecl.init(allocator, "ClientA", "llm", .{ .line = 1, .column = 1 });
+    try tree.declarations.append(allocator, ast.Declaration{ .client_decl = client_a });
+
+    // Create ClientB
+    const client_b = ast.ClientDecl.init(allocator, "ClientB", "llm", .{ .line = 5, .column = 1 });
+    try tree.declarations.append(allocator, ast.Declaration{ .client_decl = client_b });
+
+    // Create fallback client with valid strategy list
+    var fallback_client = ast.ClientDecl.init(allocator, "FallbackClient", "llm", .{ .line = 10, .column = 1 });
+    fallback_client.provider = "fallback";
+
+    // Add strategy array to options
+    var strategy_array = std.ArrayList(ast.Value){};
+    try strategy_array.append(allocator, ast.Value{ .string = "ClientA" });
+    try strategy_array.append(allocator, ast.Value{ .string = "ClientB" });
+    try fallback_client.options.put("strategy", ast.Value{ .array = strategy_array });
+
+    try tree.declarations.append(allocator, ast.Declaration{ .client_decl = fallback_client });
+
+    try validator.validate(&tree);
+    try std.testing.expect(!validator.hasErrors());
+}
+
+test "Validator: Undefined client in fallback strategy list" {
+    const allocator = std.testing.allocator;
+    var validator = Validator.init(allocator);
+    defer validator.deinit();
+
+    var tree = ast.Ast.init(allocator);
+    defer tree.deinit();
+
+    // Create ClientA
+    const client_a = ast.ClientDecl.init(allocator, "ClientA", "llm", .{ .line = 1, .column = 1 });
+    try tree.declarations.append(allocator, ast.Declaration{ .client_decl = client_a });
+
+    // Create fallback client with INVALID strategy list (ClientB doesn't exist)
+    var fallback_client = ast.ClientDecl.init(allocator, "FallbackClient", "llm", .{ .line = 5, .column = 1 });
+    fallback_client.provider = "fallback";
+
+    // Add strategy array with undefined client
+    var strategy_array = std.ArrayList(ast.Value){};
+    try strategy_array.append(allocator, ast.Value{ .string = "ClientA" });
+    try strategy_array.append(allocator, ast.Value{ .string = "UndefinedClient" });
+    try fallback_client.options.put("strategy", ast.Value{ .array = strategy_array });
+
+    try tree.declarations.append(allocator, ast.Declaration{ .client_decl = fallback_client });
+
+    try validator.validate(&tree);
+    try std.testing.expect(validator.hasErrors());
+
+    // Check error message mentions undefined client
+    const diagnostics = validator.getDiagnostics();
+    try std.testing.expect(diagnostics.len > 0);
+
+    var found_error = false;
+    for (diagnostics) |diag| {
+        if (std.mem.indexOf(u8, diag.message, "Undefined client in strategy list") != null) {
+            found_error = true;
+            break;
+        }
+    }
+    try std.testing.expect(found_error);
+}
+
+test "Validator: Valid round_robin client with strategy list" {
+    const allocator = std.testing.allocator;
+    var validator = Validator.init(allocator);
+    defer validator.deinit();
+
+    var tree = ast.Ast.init(allocator);
+    defer tree.deinit();
+
+    // Create ClientA
+    const client_a = ast.ClientDecl.init(allocator, "ClientA", "llm", .{ .line = 1, .column = 1 });
+    try tree.declarations.append(allocator, ast.Declaration{ .client_decl = client_a });
+
+    // Create ClientB
+    const client_b = ast.ClientDecl.init(allocator, "ClientB", "llm", .{ .line = 5, .column = 1 });
+    try tree.declarations.append(allocator, ast.Declaration{ .client_decl = client_b });
+
+    // Create round_robin client with valid strategy list
+    var rr_client = ast.ClientDecl.init(allocator, "RoundRobinClient", "llm", .{ .line = 10, .column = 1 });
+    rr_client.provider = "round_robin";
+
+    // Add strategy array to options
+    var strategy_array = std.ArrayList(ast.Value){};
+    try strategy_array.append(allocator, ast.Value{ .string = "ClientA" });
+    try strategy_array.append(allocator, ast.Value{ .string = "ClientB" });
+    try rr_client.options.put("strategy", ast.Value{ .array = strategy_array });
+
+    try tree.declarations.append(allocator, ast.Declaration{ .client_decl = rr_client });
+
+    try validator.validate(&tree);
+    try std.testing.expect(!validator.hasErrors());
+}
+
+test "Validator: Undefined client in round_robin strategy list" {
+    const allocator = std.testing.allocator;
+    var validator = Validator.init(allocator);
+    defer validator.deinit();
+
+    var tree = ast.Ast.init(allocator);
+    defer tree.deinit();
+
+    // Create ClientA
+    const client_a = ast.ClientDecl.init(allocator, "ClientA", "llm", .{ .line = 1, .column = 1 });
+    try tree.declarations.append(allocator, ast.Declaration{ .client_decl = client_a });
+
+    // Create round_robin client with INVALID strategy list
+    var rr_client = ast.ClientDecl.init(allocator, "RoundRobinClient", "llm", .{ .line = 5, .column = 1 });
+    rr_client.provider = "round_robin";
+
+    // Add strategy array with undefined client
+    var strategy_array = std.ArrayList(ast.Value){};
+    try strategy_array.append(allocator, ast.Value{ .string = "ClientA" });
+    try strategy_array.append(allocator, ast.Value{ .string = "NonExistentClient" });
+    try rr_client.options.put("strategy", ast.Value{ .array = strategy_array });
+
+    try tree.declarations.append(allocator, ast.Declaration{ .client_decl = rr_client });
+
+    try validator.validate(&tree);
+    try std.testing.expect(validator.hasErrors());
+
+    // Check error message
+    const diagnostics = validator.getDiagnostics();
+    try std.testing.expect(diagnostics.len > 0);
+
+    var found_error = false;
+    for (diagnostics) |diag| {
+        if (std.mem.indexOf(u8, diag.message, "Undefined client in strategy list") != null) {
+            found_error = true;
+            break;
+        }
+    }
+    try std.testing.expect(found_error);
+}
+
+test "Validator: Strategy list with non-string values" {
+    const allocator = std.testing.allocator;
+    var validator = Validator.init(allocator);
+    defer validator.deinit();
+
+    var tree = ast.Ast.init(allocator);
+    defer tree.deinit();
+
+    // Create fallback client with INVALID strategy list (contains int instead of string)
+    var fallback_client = ast.ClientDecl.init(allocator, "FallbackClient", "llm", .{ .line = 1, .column = 1 });
+    fallback_client.provider = "fallback";
+
+    // Add strategy array with invalid type
+    var strategy_array = std.ArrayList(ast.Value){};
+    try strategy_array.append(allocator, ast.Value{ .int = 123 });
+    try fallback_client.options.put("strategy", ast.Value{ .array = strategy_array });
+
+    try tree.declarations.append(allocator, ast.Declaration{ .client_decl = fallback_client });
+
+    try validator.validate(&tree);
+    try std.testing.expect(validator.hasErrors());
+
+    // Check error message
+    const diagnostics = validator.getDiagnostics();
+    try std.testing.expect(diagnostics.len > 0);
+
+    var found_error = false;
+    for (diagnostics) |diag| {
+        if (std.mem.indexOf(u8, diag.message, "Strategy list must contain client names") != null) {
+            found_error = true;
+            break;
+        }
+    }
+    try std.testing.expect(found_error);
+}
+
+test "Validator: Strategy field is not an array" {
+    const allocator = std.testing.allocator;
+    var validator = Validator.init(allocator);
+    defer validator.deinit();
+
+    var tree = ast.Ast.init(allocator);
+    defer tree.deinit();
+
+    // Create fallback client with INVALID strategy (string instead of array)
+    var fallback_client = ast.ClientDecl.init(allocator, "FallbackClient", "llm", .{ .line = 1, .column = 1 });
+    fallback_client.provider = "fallback";
+
+    // Add strategy as string (invalid)
+    try fallback_client.options.put("strategy", ast.Value{ .string = "ClientA" });
+
+    try tree.declarations.append(allocator, ast.Declaration{ .client_decl = fallback_client });
+
+    try validator.validate(&tree);
+    try std.testing.expect(validator.hasErrors());
+
+    // Check error message
+    const diagnostics = validator.getDiagnostics();
+    try std.testing.expect(diagnostics.len > 0);
+
+    var found_error = false;
+    for (diagnostics) |diag| {
+        if (std.mem.indexOf(u8, diag.message, "Strategy field must be an array") != null) {
             found_error = true;
             break;
         }
