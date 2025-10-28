@@ -29,6 +29,7 @@ pub const TypeRegistry = validator.TypeRegistry;
 pub const Diagnostic = validator.Diagnostic;
 pub const Formatter = formatter.Formatter;
 pub const PythonGenerator = codegen.PythonGenerator;
+pub const TypeScriptGenerator = codegen.TypeScriptGenerator;
 pub const MultiFileProject = multifile.MultiFileProject;
 
 pub fn getVersion() []const u8 {

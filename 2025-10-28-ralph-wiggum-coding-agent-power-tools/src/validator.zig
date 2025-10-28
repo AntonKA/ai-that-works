@@ -174,6 +174,9 @@ pub const Validator = struct {
 
         // Phase 3: Check for circular dependencies
         try self.checkCircularDependencies(tree);
+
+        // Phase 4: Validate attribute usage
+        try self.validateAttributes(tree);
     }
 
     /// Register all declarations in the AST
@@ -374,6 +377,224 @@ pub const Validator = struct {
                 try self.checkTypeExprCircular(tree, map_type.value_type, visited, visiting, location);
             },
             else => {},
+        }
+    }
+
+    /// Validate all attributes in the AST
+    fn validateAttributes(self: *Validator, tree: *const ast.Ast) !void {
+        for (tree.declarations.items) |decl| {
+            switch (decl) {
+                .class_decl => |class| {
+                    // Validate class-level attributes
+                    try self.validateClassAttributes(class.attributes.items, class.location);
+                    // Validate property-level attributes
+                    for (class.properties.items) |prop| {
+                        try self.validatePropertyAttributes(prop.attributes.items, prop.location);
+                    }
+                },
+                .enum_decl => |enum_decl| {
+                    // Validate enum-level attributes
+                    try self.validateEnumAttributes(enum_decl.attributes.items, enum_decl.location);
+                    // Validate enum value attributes
+                    for (enum_decl.values.items) |val| {
+                        try self.validateEnumValueAttributes(val.attributes.items, val.location);
+                    }
+                },
+                .test_decl => |test_decl| {
+                    // Validate test-level attributes
+                    try self.validateTestAttributes(test_decl.attributes.items, test_decl.location);
+                },
+                .function_decl => |func| {
+                    // Validate function-level attributes
+                    try self.validateFunctionAttributes(func.attributes.items, func.location);
+                },
+                else => {},
+            }
+        }
+    }
+
+    /// Validate property-level attributes
+    fn validatePropertyAttributes(self: *Validator, attributes: []const ast.Attribute, _: ast.Location) !void {
+        for (attributes) |attr| {
+            // Check if it's a class-level attribute on a property (@@)
+            if (attr.is_class_level) {
+                try self.addError("Class-level attribute @@{s} cannot be used on properties", .{attr.name}, attr.location);
+                continue;
+            }
+
+            // Validate specific property attributes
+            if (std.mem.eql(u8, attr.name, "alias")) {
+                // @alias requires exactly 1 string argument
+                if (attr.args.items.len != 1) {
+                    try self.addError("@alias requires exactly 1 argument, got {d}", .{attr.args.items.len}, attr.location);
+                } else if (attr.args.items[0] != .string) {
+                    try self.addError("@alias requires a string argument", .{}, attr.location);
+                }
+            } else if (std.mem.eql(u8, attr.name, "description")) {
+                // @description requires exactly 1 string argument
+                if (attr.args.items.len != 1) {
+                    try self.addError("@description requires exactly 1 argument, got {d}", .{attr.args.items.len}, attr.location);
+                } else if (attr.args.items[0] != .string) {
+                    try self.addError("@description requires a string argument", .{}, attr.location);
+                }
+            } else if (std.mem.eql(u8, attr.name, "skip")) {
+                // @skip should have no arguments
+                if (attr.args.items.len > 0) {
+                    try self.addWarning("@skip does not take arguments", .{}, attr.location);
+                }
+            } else if (std.mem.eql(u8, attr.name, "assert")) {
+                // @assert is for properties (constraint validation)
+                if (attr.args.items.len == 0) {
+                    try self.addError("@assert requires at least 1 argument", .{}, attr.location);
+                }
+            } else if (std.mem.eql(u8, attr.name, "check")) {
+                // @check is for properties (validation check)
+                if (attr.args.items.len == 0) {
+                    try self.addError("@check requires at least 1 argument", .{}, attr.location);
+                }
+            } else {
+                // Unknown attribute - warning
+                try self.addWarning("Unknown property attribute @{s}", .{attr.name}, attr.location);
+            }
+        }
+    }
+
+    /// Validate class-level attributes
+    fn validateClassAttributes(self: *Validator, attributes: []const ast.Attribute, _: ast.Location) !void {
+        for (attributes) |attr| {
+            // Check if it's a property-level attribute on a class (@)
+            if (!attr.is_class_level) {
+                try self.addError("Property-level attribute @{s} cannot be used on classes (use @@{s} instead)", .{ attr.name, attr.name }, attr.location);
+                continue;
+            }
+
+            // Validate specific class attributes
+            if (std.mem.eql(u8, attr.name, "alias")) {
+                // @@alias requires exactly 1 string argument
+                if (attr.args.items.len != 1) {
+                    try self.addError("@@alias requires exactly 1 argument, got {d}", .{attr.args.items.len}, attr.location);
+                } else if (attr.args.items[0] != .string) {
+                    try self.addError("@@alias requires a string argument", .{}, attr.location);
+                }
+            } else if (std.mem.eql(u8, attr.name, "description")) {
+                // @@description requires exactly 1 string argument
+                if (attr.args.items.len != 1) {
+                    try self.addError("@@description requires exactly 1 argument, got {d}", .{attr.args.items.len}, attr.location);
+                } else if (attr.args.items[0] != .string) {
+                    try self.addError("@@description requires a string argument", .{}, attr.location);
+                }
+            } else if (std.mem.eql(u8, attr.name, "dynamic")) {
+                // @@dynamic should have no arguments
+                if (attr.args.items.len > 0) {
+                    try self.addWarning("@@dynamic does not take arguments", .{}, attr.location);
+                }
+            } else {
+                // Unknown attribute - warning
+                try self.addWarning("Unknown class attribute @@{s}", .{attr.name}, attr.location);
+            }
+        }
+    }
+
+    /// Validate enum-level attributes
+    fn validateEnumAttributes(self: *Validator, attributes: []const ast.Attribute, _: ast.Location) !void {
+        for (attributes) |attr| {
+            // Check if it's a property-level attribute on an enum (@)
+            if (!attr.is_class_level) {
+                try self.addError("Property-level attribute @{s} cannot be used on enums (use @@{s} instead)", .{ attr.name, attr.name }, attr.location);
+                continue;
+            }
+
+            // Validate specific enum attributes (same as class attributes)
+            if (std.mem.eql(u8, attr.name, "alias")) {
+                if (attr.args.items.len != 1) {
+                    try self.addError("@@alias requires exactly 1 argument, got {d}", .{attr.args.items.len}, attr.location);
+                } else if (attr.args.items[0] != .string) {
+                    try self.addError("@@alias requires a string argument", .{}, attr.location);
+                }
+            } else if (std.mem.eql(u8, attr.name, "description")) {
+                if (attr.args.items.len != 1) {
+                    try self.addError("@@description requires exactly 1 argument, got {d}", .{attr.args.items.len}, attr.location);
+                } else if (attr.args.items[0] != .string) {
+                    try self.addError("@@description requires a string argument", .{}, attr.location);
+                }
+            } else if (std.mem.eql(u8, attr.name, "dynamic")) {
+                if (attr.args.items.len > 0) {
+                    try self.addWarning("@@dynamic does not take arguments", .{}, attr.location);
+                }
+            } else {
+                try self.addWarning("Unknown enum attribute @@{s}", .{attr.name}, attr.location);
+            }
+        }
+    }
+
+    /// Validate enum value attributes
+    fn validateEnumValueAttributes(self: *Validator, attributes: []const ast.Attribute, _: ast.Location) !void {
+        // Enum values use property-level attributes (@)
+        for (attributes) |attr| {
+            if (attr.is_class_level) {
+                try self.addError("Class-level attribute @@{s} cannot be used on enum values", .{attr.name}, attr.location);
+                continue;
+            }
+
+            // Validate specific enum value attributes (similar to properties)
+            if (std.mem.eql(u8, attr.name, "alias")) {
+                if (attr.args.items.len != 1) {
+                    try self.addError("@alias requires exactly 1 argument, got {d}", .{attr.args.items.len}, attr.location);
+                } else if (attr.args.items[0] != .string) {
+                    try self.addError("@alias requires a string argument", .{}, attr.location);
+                }
+            } else if (std.mem.eql(u8, attr.name, "description")) {
+                if (attr.args.items.len != 1) {
+                    try self.addError("@description requires exactly 1 argument, got {d}", .{attr.args.items.len}, attr.location);
+                } else if (attr.args.items[0] != .string) {
+                    try self.addError("@description requires a string argument", .{}, attr.location);
+                }
+            } else if (std.mem.eql(u8, attr.name, "skip")) {
+                if (attr.args.items.len > 0) {
+                    try self.addWarning("@skip does not take arguments", .{}, attr.location);
+                }
+            } else {
+                try self.addWarning("Unknown enum value attribute @{s}", .{attr.name}, attr.location);
+            }
+        }
+    }
+
+    /// Validate test-level attributes
+    fn validateTestAttributes(self: *Validator, attributes: []const ast.Attribute, _: ast.Location) !void {
+        for (attributes) |attr| {
+            // Test attributes must be class-level (@@)
+            if (!attr.is_class_level) {
+                try self.addError("Test attribute @{s} must be class-level (use @@{s})", .{ attr.name, attr.name }, attr.location);
+                continue;
+            }
+
+            // Validate specific test attributes
+            if (std.mem.eql(u8, attr.name, "check")) {
+                // @@check requires at least 1 argument (the expression to check)
+                if (attr.args.items.len == 0) {
+                    try self.addError("@@check requires at least 1 argument", .{}, attr.location);
+                }
+            } else if (std.mem.eql(u8, attr.name, "assert")) {
+                // @@assert requires at least 1 argument (the expression to assert)
+                if (attr.args.items.len == 0) {
+                    try self.addError("@@assert requires at least 1 argument", .{}, attr.location);
+                }
+            } else {
+                try self.addWarning("Unknown test attribute @@{s}", .{attr.name}, attr.location);
+            }
+        }
+    }
+
+    /// Validate function-level attributes
+    fn validateFunctionAttributes(self: *Validator, attributes: []const ast.Attribute, _: ast.Location) !void {
+        // Functions don't have many standard attributes in BAML
+        for (attributes) |attr| {
+            // Just warn about any attributes on functions
+            if (attr.is_class_level) {
+                try self.addWarning("Attribute @@{s} on function may not be supported", .{attr.name}, attr.location);
+            } else {
+                try self.addWarning("Attribute @{s} on function may not be supported", .{attr.name}, attr.location);
+            }
         }
     }
 
@@ -643,6 +864,385 @@ test "Validator: Complex types are valid" {
     try class.properties.append(allocator, addresses_prop);
 
     try tree.declarations.append(allocator, ast.Declaration{ .class_decl = class });
+
+    try validator.validate(&tree);
+    try std.testing.expect(!validator.hasErrors());
+}
+
+test "Validator: Valid @alias on property" {
+    const allocator = std.testing.allocator;
+    var validator = Validator.init(allocator);
+    defer validator.deinit();
+
+    var tree = ast.Ast.init(allocator);
+    defer tree.deinit();
+
+    var class = ast.ClassDecl.init(allocator, "Person", .{ .line = 1, .column = 1 });
+
+    // Add property with valid @alias attribute
+    const name_type = try allocator.create(ast.TypeExpr);
+    name_type.* = ast.TypeExpr{ .primitive = .string };
+
+    var name_prop = ast.Property{
+        .name = "name",
+        .type_expr = name_type,
+        .attributes = std.ArrayList(ast.Attribute){},
+        .docstring = null,
+        .location = .{ .line = 2, .column = 3 },
+    };
+
+    // Create @alias("full_name") attribute
+    var alias_attr = ast.Attribute{
+        .name = "alias",
+        .is_class_level = false,
+        .args = std.ArrayList(ast.Value){},
+        .location = .{ .line = 2, .column = 10 },
+    };
+    try alias_attr.args.append(allocator, ast.Value{ .string = "full_name" });
+    try name_prop.attributes.append(allocator, alias_attr);
+
+    try class.properties.append(allocator, name_prop);
+    try tree.declarations.append(allocator, ast.Declaration{ .class_decl = class });
+
+    try validator.validate(&tree);
+    try std.testing.expect(!validator.hasErrors());
+}
+
+test "Validator: Invalid @alias with no arguments" {
+    const allocator = std.testing.allocator;
+    var validator = Validator.init(allocator);
+    defer validator.deinit();
+
+    var tree = ast.Ast.init(allocator);
+    defer tree.deinit();
+
+    var class = ast.ClassDecl.init(allocator, "Person", .{ .line = 1, .column = 1 });
+
+    const name_type = try allocator.create(ast.TypeExpr);
+    name_type.* = ast.TypeExpr{ .primitive = .string };
+
+    var name_prop = ast.Property{
+        .name = "name",
+        .type_expr = name_type,
+        .attributes = std.ArrayList(ast.Attribute){},
+        .docstring = null,
+        .location = .{ .line = 2, .column = 3 },
+    };
+
+    // Create @alias() with no arguments (invalid)
+    const alias_attr = ast.Attribute{
+        .name = "alias",
+        .is_class_level = false,
+        .args = std.ArrayList(ast.Value){},
+        .location = .{ .line = 2, .column = 10 },
+    };
+    try name_prop.attributes.append(allocator, alias_attr);
+
+    try class.properties.append(allocator, name_prop);
+    try tree.declarations.append(allocator, ast.Declaration{ .class_decl = class });
+
+    try validator.validate(&tree);
+    try std.testing.expect(validator.hasErrors());
+}
+
+test "Validator: Invalid @alias with non-string argument" {
+    const allocator = std.testing.allocator;
+    var validator = Validator.init(allocator);
+    defer validator.deinit();
+
+    var tree = ast.Ast.init(allocator);
+    defer tree.deinit();
+
+    var class = ast.ClassDecl.init(allocator, "Person", .{ .line = 1, .column = 1 });
+
+    const name_type = try allocator.create(ast.TypeExpr);
+    name_type.* = ast.TypeExpr{ .primitive = .string };
+
+    var name_prop = ast.Property{
+        .name = "name",
+        .type_expr = name_type,
+        .attributes = std.ArrayList(ast.Attribute){},
+        .docstring = null,
+        .location = .{ .line = 2, .column = 3 },
+    };
+
+    // Create @alias(123) with int argument (invalid)
+    var alias_attr = ast.Attribute{
+        .name = "alias",
+        .is_class_level = false,
+        .args = std.ArrayList(ast.Value){},
+        .location = .{ .line = 2, .column = 10 },
+    };
+    try alias_attr.args.append(allocator, ast.Value{ .int = 123 });
+    try name_prop.attributes.append(allocator, alias_attr);
+
+    try class.properties.append(allocator, name_prop);
+    try tree.declarations.append(allocator, ast.Declaration{ .class_decl = class });
+
+    try validator.validate(&tree);
+    try std.testing.expect(validator.hasErrors());
+}
+
+test "Validator: Valid @@alias on class" {
+    const allocator = std.testing.allocator;
+    var validator = Validator.init(allocator);
+    defer validator.deinit();
+
+    var tree = ast.Ast.init(allocator);
+    defer tree.deinit();
+
+    var class = ast.ClassDecl.init(allocator, "Person", .{ .line = 1, .column = 1 });
+
+    // Create @@alias("human") attribute
+    var alias_attr = ast.Attribute{
+        .name = "alias",
+        .is_class_level = true,
+        .args = std.ArrayList(ast.Value){},
+        .location = .{ .line = 1, .column = 10 },
+    };
+    try alias_attr.args.append(allocator, ast.Value{ .string = "human" });
+    try class.attributes.append(allocator, alias_attr);
+
+    try tree.declarations.append(allocator, ast.Declaration{ .class_decl = class });
+
+    try validator.validate(&tree);
+    try std.testing.expect(!validator.hasErrors());
+}
+
+test "Validator: Invalid @@alias on property (should be @)" {
+    const allocator = std.testing.allocator;
+    var validator = Validator.init(allocator);
+    defer validator.deinit();
+
+    var tree = ast.Ast.init(allocator);
+    defer tree.deinit();
+
+    var class = ast.ClassDecl.init(allocator, "Person", .{ .line = 1, .column = 1 });
+
+    const name_type = try allocator.create(ast.TypeExpr);
+    name_type.* = ast.TypeExpr{ .primitive = .string };
+
+    var name_prop = ast.Property{
+        .name = "name",
+        .type_expr = name_type,
+        .attributes = std.ArrayList(ast.Attribute){},
+        .docstring = null,
+        .location = .{ .line = 2, .column = 3 },
+    };
+
+    // Create @@alias on property (invalid - should be @)
+    var alias_attr = ast.Attribute{
+        .name = "alias",
+        .is_class_level = true,
+        .args = std.ArrayList(ast.Value){},
+        .location = .{ .line = 2, .column = 10 },
+    };
+    try alias_attr.args.append(allocator, ast.Value{ .string = "full_name" });
+    try name_prop.attributes.append(allocator, alias_attr);
+
+    try class.properties.append(allocator, name_prop);
+    try tree.declarations.append(allocator, ast.Declaration{ .class_decl = class });
+
+    try validator.validate(&tree);
+    try std.testing.expect(validator.hasErrors());
+}
+
+test "Validator: Invalid @alias on class (should be @@)" {
+    const allocator = std.testing.allocator;
+    var validator = Validator.init(allocator);
+    defer validator.deinit();
+
+    var tree = ast.Ast.init(allocator);
+    defer tree.deinit();
+
+    var class = ast.ClassDecl.init(allocator, "Person", .{ .line = 1, .column = 1 });
+
+    // Create @alias on class (invalid - should be @@)
+    var alias_attr = ast.Attribute{
+        .name = "alias",
+        .is_class_level = false,
+        .args = std.ArrayList(ast.Value){},
+        .location = .{ .line = 1, .column = 10 },
+    };
+    try alias_attr.args.append(allocator, ast.Value{ .string = "human" });
+    try class.attributes.append(allocator, alias_attr);
+
+    try tree.declarations.append(allocator, ast.Declaration{ .class_decl = class });
+
+    try validator.validate(&tree);
+    try std.testing.expect(validator.hasErrors());
+}
+
+test "Validator: Valid @@dynamic on class" {
+    const allocator = std.testing.allocator;
+    var validator = Validator.init(allocator);
+    defer validator.deinit();
+
+    var tree = ast.Ast.init(allocator);
+    defer tree.deinit();
+
+    var class = ast.ClassDecl.init(allocator, "Person", .{ .line = 1, .column = 1 });
+
+    // Create @@dynamic attribute (no arguments)
+    const dynamic_attr = ast.Attribute{
+        .name = "dynamic",
+        .is_class_level = true,
+        .args = std.ArrayList(ast.Value){},
+        .location = .{ .line = 1, .column = 10 },
+    };
+    try class.attributes.append(allocator, dynamic_attr);
+
+    try tree.declarations.append(allocator, ast.Declaration{ .class_decl = class });
+
+    try validator.validate(&tree);
+    try std.testing.expect(!validator.hasErrors());
+}
+
+test "Validator: Valid @@check on test" {
+    const allocator = std.testing.allocator;
+    var validator = Validator.init(allocator);
+    defer validator.deinit();
+
+    var tree = ast.Ast.init(allocator);
+    defer tree.deinit();
+
+    // Create a test with @@check attribute
+    var test_decl = ast.TestDecl.init(allocator, "TestGreet", .{ .line = 1, .column = 1 });
+
+    // Create @@check(output, "length > 0") attribute
+    var check_attr = ast.Attribute{
+        .name = "check",
+        .is_class_level = true,
+        .args = std.ArrayList(ast.Value){},
+        .location = .{ .line = 1, .column = 10 },
+    };
+    try check_attr.args.append(allocator, ast.Value{ .string = "output" });
+    try check_attr.args.append(allocator, ast.Value{ .string = "length > 0" });
+    try test_decl.attributes.append(allocator, check_attr);
+
+    try tree.declarations.append(allocator, ast.Declaration{ .test_decl = test_decl });
+
+    try validator.validate(&tree);
+    try std.testing.expect(!validator.hasErrors());
+}
+
+test "Validator: Invalid @@check with no arguments" {
+    const allocator = std.testing.allocator;
+    var validator = Validator.init(allocator);
+    defer validator.deinit();
+
+    var tree = ast.Ast.init(allocator);
+    defer tree.deinit();
+
+    var test_decl = ast.TestDecl.init(allocator, "TestGreet", .{ .line = 1, .column = 1 });
+
+    // Create @@check() with no arguments (invalid)
+    const check_attr = ast.Attribute{
+        .name = "check",
+        .is_class_level = true,
+        .args = std.ArrayList(ast.Value){},
+        .location = .{ .line = 1, .column = 10 },
+    };
+    try test_decl.attributes.append(allocator, check_attr);
+
+    try tree.declarations.append(allocator, ast.Declaration{ .test_decl = test_decl });
+
+    try validator.validate(&tree);
+    try std.testing.expect(validator.hasErrors());
+}
+
+test "Validator: Valid @skip on property" {
+    const allocator = std.testing.allocator;
+    var validator = Validator.init(allocator);
+    defer validator.deinit();
+
+    var tree = ast.Ast.init(allocator);
+    defer tree.deinit();
+
+    var class = ast.ClassDecl.init(allocator, "Person", .{ .line = 1, .column = 1 });
+
+    const name_type = try allocator.create(ast.TypeExpr);
+    name_type.* = ast.TypeExpr{ .primitive = .string };
+
+    var name_prop = ast.Property{
+        .name = "internal_id",
+        .type_expr = name_type,
+        .attributes = std.ArrayList(ast.Attribute){},
+        .docstring = null,
+        .location = .{ .line = 2, .column = 3 },
+    };
+
+    // Create @skip attribute (no arguments)
+    const skip_attr = ast.Attribute{
+        .name = "skip",
+        .is_class_level = false,
+        .args = std.ArrayList(ast.Value){},
+        .location = .{ .line = 2, .column = 10 },
+    };
+    try name_prop.attributes.append(allocator, skip_attr);
+
+    try class.properties.append(allocator, name_prop);
+    try tree.declarations.append(allocator, ast.Declaration{ .class_decl = class });
+
+    try validator.validate(&tree);
+    try std.testing.expect(!validator.hasErrors());
+}
+
+test "Validator: Valid @alias on enum value" {
+    const allocator = std.testing.allocator;
+    var validator = Validator.init(allocator);
+    defer validator.deinit();
+
+    var tree = ast.Ast.init(allocator);
+    defer tree.deinit();
+
+    var enum_decl = ast.EnumDecl.init(allocator, "Status", .{ .line = 1, .column = 1 });
+
+    // Create enum value with @alias attribute
+    var enum_val = ast.EnumValue{
+        .name = "Active",
+        .attributes = std.ArrayList(ast.Attribute){},
+        .docstring = null,
+        .location = .{ .line = 2, .column = 3 },
+    };
+
+    var alias_attr = ast.Attribute{
+        .name = "alias",
+        .is_class_level = false,
+        .args = std.ArrayList(ast.Value){},
+        .location = .{ .line = 2, .column = 10 },
+    };
+    try alias_attr.args.append(allocator, ast.Value{ .string = "currently_active" });
+    try enum_val.attributes.append(allocator, alias_attr);
+
+    try enum_decl.values.append(allocator, enum_val);
+    try tree.declarations.append(allocator, ast.Declaration{ .enum_decl = enum_decl });
+
+    try validator.validate(&tree);
+    try std.testing.expect(!validator.hasErrors());
+}
+
+test "Validator: Valid @@alias on enum" {
+    const allocator = std.testing.allocator;
+    var validator = Validator.init(allocator);
+    defer validator.deinit();
+
+    var tree = ast.Ast.init(allocator);
+    defer tree.deinit();
+
+    var enum_decl = ast.EnumDecl.init(allocator, "Status", .{ .line = 1, .column = 1 });
+
+    // Create @@alias on enum
+    var alias_attr = ast.Attribute{
+        .name = "alias",
+        .is_class_level = true,
+        .args = std.ArrayList(ast.Value){},
+        .location = .{ .line = 1, .column = 10 },
+    };
+    try alias_attr.args.append(allocator, ast.Value{ .string = "user_status" });
+    try enum_decl.attributes.append(allocator, alias_attr);
+
+    try tree.declarations.append(allocator, ast.Declaration{ .enum_decl = enum_decl });
 
     try validator.validate(&tree);
     try std.testing.expect(!validator.hasErrors());

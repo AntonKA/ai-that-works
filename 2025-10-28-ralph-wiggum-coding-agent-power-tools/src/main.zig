@@ -36,10 +36,20 @@ pub fn main() !void {
         try formatCommand(allocator, args[2]);
     } else if (std.mem.eql(u8, command, "generate") or std.mem.eql(u8, command, "gen")) {
         if (args.len < 3) {
-            try printError("generate command requires a file argument", "minibaml generate <file.baml>");
+            try printError("generate command requires a file argument", "minibaml generate <file.baml> [--typescript|--python]");
             return;
         }
-        try generateCommand(allocator, args[2]);
+        const path = args[2];
+        var use_typescript = false;
+
+        // Check for --typescript flag
+        if (args.len >= 4) {
+            if (std.mem.eql(u8, args[3], "--typescript") or std.mem.eql(u8, args[3], "-ts")) {
+                use_typescript = true;
+            }
+        }
+
+        try generateCommand(allocator, path, use_typescript);
     } else if (std.mem.eql(u8, command, "parse")) {
         if (args.len < 3) {
             try printError("parse command requires a file argument", "minibaml parse <file.baml>");
@@ -67,10 +77,14 @@ fn printUsage() void {
         \\  minibaml parse <path>             Parse and show AST (file or directory)
         \\  minibaml check <path>             Validate BAML file or directory
         \\  minibaml fmt <file.baml>          Format a BAML file
-        \\  minibaml generate <path>          Generate Python code from BAML
-        \\  minibaml gen <path>               Alias for generate
+        \\  minibaml generate <path> [opts]   Generate code from BAML (default: Python)
+        \\  minibaml gen <path> [opts]        Alias for generate
         \\
-        \\Options:
+        \\Code Generation Options:
+        \\  --python                          Generate Python code (default)
+        \\  --typescript, -ts                 Generate TypeScript code
+        \\
+        \\Global Options:
         \\  --help, -h                        Show this help message
         \\  --version, -v                     Show version information
         \\
@@ -81,6 +95,7 @@ fn printUsage() void {
         \\  minibaml check baml_src           # Validate directory
         \\  minibaml fmt test.baml            # Format and print
         \\  minibaml generate baml_src        # Generate Python code
+        \\  minibaml gen baml_src --typescript # Generate TypeScript code
         \\
     ) catch {};
 }
@@ -373,23 +388,40 @@ fn formatCommand(allocator: std.mem.Allocator, filename: []const u8) !void {
     try std.fs.File.stdout().writeAll(buffer.items);
 }
 
-fn generateCommand(allocator: std.mem.Allocator, path: []const u8) !void {
+fn generateCommand(allocator: std.mem.Allocator, path: []const u8, use_typescript: bool) !void {
     var buffer = std.ArrayList(u8){};
     defer buffer.deinit(allocator);
 
-    var gen = minibaml.PythonGenerator.init(allocator, &buffer);
+    if (use_typescript) {
+        var gen = minibaml.TypeScriptGenerator.init(allocator, &buffer);
 
-    if (isDirectory(path)) {
-        var project = minibaml.MultiFileProject.init(allocator);
-        defer project.deinit();
+        if (isDirectory(path)) {
+            var project = minibaml.MultiFileProject.init(allocator);
+            defer project.deinit();
 
-        try project.loadDirectory(path);
-        const merged_ast = project.getMergedAst();
-        try gen.generate(merged_ast);
+            try project.loadDirectory(path);
+            const merged_ast = project.getMergedAst();
+            try gen.generate(merged_ast);
+        } else {
+            var result = try parseFile(allocator, path);
+            defer result.deinit();
+            try gen.generate(&result.tree);
+        }
     } else {
-        var result = try parseFile(allocator, path);
-        defer result.deinit();
-        try gen.generate(&result.tree);
+        var gen = minibaml.PythonGenerator.init(allocator, &buffer);
+
+        if (isDirectory(path)) {
+            var project = minibaml.MultiFileProject.init(allocator);
+            defer project.deinit();
+
+            try project.loadDirectory(path);
+            const merged_ast = project.getMergedAst();
+            try gen.generate(merged_ast);
+        } else {
+            var result = try parseFile(allocator, path);
+            defer result.deinit();
+            try gen.generate(&result.tree);
+        }
     }
 
     try std.fs.File.stdout().writeAll(buffer.items);

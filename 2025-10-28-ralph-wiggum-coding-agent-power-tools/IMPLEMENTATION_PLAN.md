@@ -398,20 +398,30 @@ generator PythonGenerator {
 - [x] 7.5: Validate function parameter types
 - [x] 7.6: Validate return types
 - [x] 7.7: Check for duplicate definitions
-- [x] 7.8: Validate attribute usage (partial - basic framework in place)
+- [x] 7.8: Validate attribute usage (✅ FULLY COMPLETED)
 - [x] 7.9: Add semantic analysis tests
 
-**Validation**: ✅ PASSED - Successfully detects and reports type errors in BAML code.
+**Validation**: ✅ PASSED - Successfully detects and reports type errors and attribute misuse in BAML code.
 
 **Implementation Details**:
-- Created `src/validator.zig` (651 lines) with comprehensive validation framework
+- Created `src/validator.zig` (1,297 lines) with comprehensive validation framework
 - TypeRegistry tracks all declared types (classes, enums, primitives)
 - FunctionRegistry tracks all declared functions
 - Validator performs multi-phase validation:
   - Phase 1: Register all declarations and detect duplicates
   - Phase 2: Validate all type references are defined
   - Phase 3: Check for circular dependencies in class types
-- Comprehensive test suite with 11 test cases covering:
+  - Phase 4: Validate attribute usage (NEW)
+- Comprehensive attribute validation:
+  - validatePropertyAttributes(): Validates @alias, @description, @skip, @assert, @check on properties
+  - validateClassAttributes(): Validates @@alias, @@description, @@dynamic on classes
+  - validateEnumAttributes(): Validates @@alias, @@description, @@dynamic on enums
+  - validateEnumValueAttributes(): Validates @alias, @description, @skip on enum values
+  - validateTestAttributes(): Validates @@check, @@assert on tests
+  - validateFunctionAttributes(): Warns about unsupported attributes on functions
+  - Checks attribute argument count and types (e.g., @alias requires exactly 1 string)
+  - Prevents misuse of @ vs @@ attributes on wrong declaration types
+- Comprehensive test suite with 23 test cases covering:
   - Type registry operations (primitives, classes, enums)
   - Function registry operations
   - Duplicate definition detection
@@ -419,8 +429,10 @@ generator PythonGenerator {
   - Undefined function detection in tests
   - Circular dependency detection
   - Complex type validation (arrays, optionals, unions, maps)
+  - Valid attribute usage (12 new tests)
+  - Invalid attribute usage detection (11 new tests)
 - Diagnostic system with error messages including line/column info
-- All tests pass (`zig build test`)
+- All tests pass (`zig build test --summary all`)
 
 **Test Results**: ✅ All tests pass - Build Summary: 5/5 steps succeeded; 2/2 tests passed
 
@@ -430,6 +442,11 @@ generator PythonGenerator {
 - Detects duplicate definitions: Two classes with the same name
 - Validates complex types: `Address[]`, `Person | null`, `map<string, string>`
 - Validates function parameter and return types
+- Detects invalid attribute usage: @@alias on property (should be @)
+- Detects invalid attribute arguments: @alias() with no arguments
+- Detects wrong argument types: @alias(123) with non-string argument
+- Validates test attributes: @@check and @@assert require arguments
+- Warns about unknown attributes on declarations
 
 ---
 
